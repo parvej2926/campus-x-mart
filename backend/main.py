@@ -1163,7 +1163,7 @@ def delete_listing(item_id: int, user: dict = Depends(get_current_user)):
 @app.get("/api/auth/me")
 def me_route(request: Request):
     user = get_current_user(request)
-    return {"user_id": user.get("user_id", user.get("id")), **user}
+    return {"user_id": user.get("user_id", user.get("id")), **user, "user": user}
 
 
 @app.post("/api/items", status_code=status.HTTP_201_CREATED)

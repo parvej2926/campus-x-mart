@@ -1,6 +1,17 @@
 from main import create_verification_code_for_user
 
 
+def test_me_response_restores_session_user_and_preserves_flat_fields(client, make_user):
+    account = make_user(verified=True)
+
+    response = client.get("/api/auth/me", headers=account["headers"])
+
+    assert response.status_code == 200, response.text
+    assert response.json()["user"]["user_id"] == account["user"]["user_id"]
+    assert response.json()["user"]["email_verified"] is True
+    assert response.json()["user_id"] == account["user"]["user_id"]
+
+
 def _user_id(client, headers):
     response = client.get("/api/auth/me", headers=headers)
     assert response.status_code == 200, response.text
