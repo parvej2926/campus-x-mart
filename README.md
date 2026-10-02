@@ -26,6 +26,7 @@ source venv/bin/activate
 pip install -r requirements.txt -r requirements-dev.txt
 cp .env.example .env
 # fill in DATABASE_URL and JWT_SECRET_KEY before starting the app
+# For local verification testing, set EXPOSE_DEV_OTP=true in backend/.env; dev mode does not send real email or SMS.
 # install Ollama and run `ollama pull mistral:latest` if the model is not already available
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```

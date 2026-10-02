@@ -1043,7 +1043,7 @@ export default function WorkspaceApp() {
   async function sendCode() {
     try {
       const result = await api("/api/auth/send-verification", "POST", { channel });
-      setNotice(result.message);
+      setNotice(result.dev_code ? `${result.message} Code: ${result.dev_code}` : result.message);
       setResendIn(result.resend_after_seconds || 60);
     } catch (error) {
       setNotice(error.message);

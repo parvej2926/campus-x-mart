@@ -710,12 +710,13 @@ def send_verification(request: Request, payload: VerificationSendRequest, user: 
     try:
         send_verification_code(payload.channel, destination, code)
     except VerificationDeliveryError as error:
-        if settings.APP_ENV == "dev":
-            return {"message": "Delivery is not configured. Development verification is enabled.", "expires_in_seconds": VERIFICATION_EXPIRY_MINUTES * 60, "resend_after_seconds": RESEND_COOLDOWN_SECONDS}
-        discard_verification_code(user["id"], payload.channel, code_hash)
-        raise HTTPException(status_code=503, detail="The verification code could not be delivered. Check your delivery settings and try again.") from error
-    if settings.APP_ENV == "dev" and settings.EXPOSE_DEV_OTP:
-        return {"message": "Delivery is not configured. Development code generated.", "dev_code": code, "expires_in_seconds": VERIFICATION_EXPIRY_MINUTES * 60, "resend_after_seconds": RESEND_COOLDOWN_SECONDS}
+        if settings.APP_ENV != "dev":
+            discard_verification_code(user["id"], payload.channel, code_hash)
+            raise HTTPException(status_code=503, detail="The verification code could not be delivered. Check your delivery settings and try again.") from error
+    if settings.APP_ENV == "dev":
+        if settings.EXPOSE_DEV_OTP:
+            return {"message": "Development code generated. It expires in 10 minutes.", "dev_code": code, "expires_in_seconds": VERIFICATION_EXPIRY_MINUTES * 60, "resend_after_seconds": RESEND_COOLDOWN_SECONDS}
+        return {"message": "Development mode does not send real codes. Set EXPOSE_DEV_OTP=true in backend/.env to show the development code.", "expires_in_seconds": VERIFICATION_EXPIRY_MINUTES * 60, "resend_after_seconds": RESEND_COOLDOWN_SECONDS}
     return {"message": f"A verification code was sent to your {payload.channel.lower()}.", "expires_in_seconds": VERIFICATION_EXPIRY_MINUTES * 60, "resend_after_seconds": RESEND_COOLDOWN_SECONDS}
 
 

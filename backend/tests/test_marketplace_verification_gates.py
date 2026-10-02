@@ -1,6 +1,6 @@
 import pytest
 
-from main import get_connection
+from main import get_connection, settings
 
 
 LISTING_PAYLOAD = {
@@ -100,3 +100,25 @@ def test_email_verification_alone_allows_order(client, make_user, make_item):
     )
 
     assert response.status_code == 201, response.text
+
+
+@pytest.mark.parametrize("expose_dev_otp", [False, True])
+def test_dev_verification_response_matches_delivery_mode(client, make_user, monkeypatch, expose_dev_otp):
+    user = make_user()
+    monkeypatch.setattr(settings, "APP_ENV", "dev")
+    monkeypatch.setattr(settings, "EXPOSE_DEV_OTP", expose_dev_otp)
+    monkeypatch.setattr("main.send_verification_code", lambda *args: None)
+
+    response = client.post(
+        "/api/auth/send-verification",
+        headers=user["headers"],
+        json={"channel": "EMAIL"},
+    )
+
+    assert response.status_code == 202, response.text
+    if expose_dev_otp:
+        assert len(response.json()["dev_code"]) == 6
+        assert response.json()["dev_code"].isdigit()
+    else:
+        assert "dev_code" not in response.json()
+        assert "does not send real codes" in response.json()["message"]
