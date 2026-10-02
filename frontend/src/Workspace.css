@@ -383,7 +383,9 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .message-bubble { max-width: min(78%, 460px); padding: 10px 12px 7px; border: 1px solid #e3e9e0; border-radius: 4px 12px 12px; background: white; }
 .message-bubble-own { align-self: flex-end; border-color: #dce8cf; border-radius: 12px 4px 12px 12px; background: #edf4e5; }
 .message-bubble p { margin: 0; color: #334238; font-size: 11px; line-height: 1.55; overflow-wrap: anywhere; white-space: pre-wrap; }
-.message-bubble time { display: block; margin-top: 5px; color: #8a958b; font-size: 8px; text-align: right; }
+.message-bubble-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 5px; }
+.message-bubble time { display: block; color: #8a958b; font-size: 8px; }
+.message-delete { padding: 0; border: 0; background: none; color: #738073; font: inherit; font-size: 8px; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 .thread-empty { align-self: center; margin: auto; color: var(--muted); font-size: 11px; text-align: center; }
 .message-compose { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--line); }
 .message-compose .button { min-height: 36px; padding-inline: 12px; font-size: 10px; }

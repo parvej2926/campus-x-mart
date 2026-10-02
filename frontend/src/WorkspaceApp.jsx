@@ -932,6 +932,19 @@ export default function WorkspaceApp() {
     }
   }
 
+  async function hideMessage(messageId) {
+    if (!selectedConversation) return;
+    try {
+      await api(`/api/messages/${selectedConversation}/${messageId}`, "DELETE");
+      setMessages((current) => current.filter((message) => message.message_id !== messageId));
+      const result = await api("/api/messages/conversations");
+      setConversations(result.conversations || []);
+      setNotice("Message deleted from your view.");
+    } catch (error) {
+      setNotice(error.message);
+    }
+  }
+
   async function requestProductOrder(product) {
     if (!hasVerifiedContact(user)) {
       navigate("/account");
@@ -1205,7 +1218,7 @@ export default function WorkspaceApp() {
                 {selectedPeer && !conversations.some((conversation) => conversation.user_id === selectedPeer.user_id) && <button className="conversation-choice conversation-choice-active" onClick={() => setSelectedConversation(selectedPeer.user_id)}><span className="conversation-avatar">{selectedPeer.full_name.slice(0, 1).toUpperCase()}</span><span className="conversation-summary"><strong>{selectedPeer.full_name}</strong><span>New conversation</span></span></button>}
                 {!conversations.length && !selectedPeer && <p className="inbox-empty">Your conversations will show up here.</p>}
               </aside>
-              <div className="message-panel">{activePeer ? <><header className="message-peer"><span className="conversation-avatar">{activePeer.full_name.slice(0, 1).toUpperCase()}</span><div><strong>{activePeer.full_name}</strong><span>@{activePeer.username}</span></div></header><div className="message-thread" aria-live="polite">{messages.length ? messages.map((message) => <article key={message.message_id} className={`message-bubble${message.sender_id === user?.id ? " message-bubble-own" : ""}`}><p>{message.message_text}</p><time>{new Date(message.sent_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</time></article>) : <p className="thread-empty">Start with a question about an item or a time to meet.</p>}</div><form className="message-compose" onSubmit={sendMessage}><input aria-label="Write a message" placeholder="Write a message…" value={messageDraft} onChange={(event) => setMessageDraft(event.target.value)} maxLength={2000} required /><button className="button button-dark" disabled={!messageDraft.trim()}>Send <span aria-hidden="true">↗</span></button></form></> : <div className="message-empty"><span className="empty-number">01</span><h2>Your next conversation starts with a product.</h2><p>Open the products page and message a seller to ask a question.</p><button className="button button-outline" onClick={() => navigate("/products")}>Explore products <span aria-hidden="true">→</span></button></div>}</div>
+              <div className="message-panel">{activePeer ? <><header className="message-peer"><span className="conversation-avatar">{activePeer.full_name.slice(0, 1).toUpperCase()}</span><div><strong>{activePeer.full_name}</strong><span>@{activePeer.username}</span></div></header><div className="message-thread" aria-live="polite">{messages.length ? messages.map((message) => <article key={message.message_id} className={`message-bubble${message.sender_id === user?.id ? " message-bubble-own" : ""}`}><p>{message.message_text}</p><div className="message-bubble-meta"><time>{new Date(message.sent_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</time><button type="button" className="message-delete" onClick={() => hideMessage(message.message_id)}>Delete for me</button></div></article>) : <p className="thread-empty">Start with a question about an item or a time to meet.</p>}</div><form className="message-compose" onSubmit={sendMessage}><input aria-label="Write a message" placeholder="Write a message…" value={messageDraft} onChange={(event) => setMessageDraft(event.target.value)} maxLength={2000} required /><button className="button button-dark" disabled={!messageDraft.trim()}>Send <span aria-hidden="true">↗</span></button></form></> : <div className="message-empty"><span className="empty-number">01</span><h2>Your next conversation starts with a product.</h2><p>Open the products page and message a seller to ask a question.</p><button className="button button-outline" onClick={() => navigate("/products")}>Explore products <span aria-hidden="true">→</span></button></div>}</div>
             </section>
           </>}
 

@@ -1595,17 +1595,26 @@ def list_conversations(user: dict = Depends(get_current_user)):
                 """WITH participant_messages AS (
                        SELECT CASE WHEN sender_id = %s THEN receiver_id ELSE sender_id END AS peer_id,
                               sender_id, message_id, message_text, sent_at
-                       FROM messages WHERE sender_id = %s OR receiver_id = %s
+                       FROM messages
+                       WHERE (sender_id = %s OR receiver_id = %s)
+                         AND NOT EXISTS (
+                             SELECT 1 FROM message_hidden_for hidden
+                             WHERE hidden.message_id = messages.message_id AND hidden.user_id = %s
+                         )
                    ), latest AS (
                        SELECT DISTINCT ON (peer_id) peer_id, sender_id, message_text, sent_at
                        FROM participant_messages ORDER BY peer_id, sent_at DESC, message_id DESC
                    )
                    SELECT latest.peer_id, u.username, u.full_name, latest.message_text, latest.sent_at,
                           (SELECT COUNT(*) FROM messages unread
-                           WHERE unread.sender_id = latest.peer_id AND unread.receiver_id = %s AND unread.is_read = FALSE)
+                           WHERE unread.sender_id = latest.peer_id AND unread.receiver_id = %s AND unread.is_read = FALSE
+                             AND NOT EXISTS (
+                                 SELECT 1 FROM message_hidden_for hidden
+                                 WHERE hidden.message_id = unread.message_id AND hidden.user_id = %s
+                             ))
                    FROM latest JOIN users u ON u.user_id = latest.peer_id
                    ORDER BY latest.sent_at DESC""",
-                (user["id"], user["id"], user["id"], user["id"]),
+                (user["id"], user["id"], user["id"], user["id"], user["id"], user["id"]),
             )
             rows = cursor.fetchall()
     finally:
@@ -1641,10 +1650,14 @@ def list_messages(
                    FROM (
                        SELECT message_id, sender_id, receiver_id, message_text, is_read, sent_at
                        FROM messages
-                       WHERE (sender_id = %s AND receiver_id = %s) OR (sender_id = %s AND receiver_id = %s)
+                       WHERE ((sender_id = %s AND receiver_id = %s) OR (sender_id = %s AND receiver_id = %s))
+                         AND NOT EXISTS (
+                             SELECT 1 FROM message_hidden_for hidden
+                             WHERE hidden.message_id = messages.message_id AND hidden.user_id = %s
+                         )
                        ORDER BY sent_at DESC, message_id DESC LIMIT %s OFFSET %s
                    ) conversation ORDER BY sent_at, message_id""",
-                (user["id"], user_id, user_id, user["id"], limit, offset),
+                (user["id"], user_id, user_id, user["id"], user["id"], limit, offset),
             )
             rows = cursor.fetchall()
     finally:
@@ -1688,6 +1701,35 @@ async def send_message(user_id: int, payload: MessageCreateRequest, user: dict =
     message_payload = serialize_message(row)
     await broadcast_chat_message(message_payload)
     return {"message": message_payload}
+
+
+@app.delete("/api/messages/{user_id}/{message_id}")
+def hide_message(user_id: int, message_id: int, user: dict = Depends(get_current_user)):
+    connection = get_connection()
+    try:
+        with connection.cursor() as cursor:
+            require_message_recipient(cursor, user["id"], user_id)
+            cursor.execute(
+                """SELECT 1 FROM messages
+                   WHERE message_id = %s
+                     AND ((sender_id = %s AND receiver_id = %s)
+                          OR (sender_id = %s AND receiver_id = %s))""",
+                (message_id, user["id"], user_id, user_id, user["id"]),
+            )
+            if cursor.fetchone() is None:
+                raise HTTPException(status_code=404, detail="Message not found.")
+            cursor.execute(
+                """INSERT INTO message_hidden_for (message_id, user_id)
+                   VALUES (%s, %s) ON CONFLICT DO NOTHING""",
+                (message_id, user["id"]),
+            )
+        connection.commit()
+    except HTTPException:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+    return {"message_id": message_id, "hidden": True}
 
 
 @app.post("/api/messages/{user_id}/read")

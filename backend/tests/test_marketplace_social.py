@@ -122,6 +122,34 @@ def test_messaging_sends_lists_and_marks_conversation_read(client, make_user):
     assert refreshed.json()["conversations"][0]["unread_count"] == 0
 
 
+def test_deleting_message_hides_it_only_for_requesting_user(client, make_user):
+    sender = make_user(verified=True)
+    recipient = make_user(verified=True)
+    sent = client.post(
+        f"/api/messages/{recipient['user']['user_id']}",
+        headers=sender["headers"],
+        json={"message_text": "Can you still see this?"},
+    )
+    assert sent.status_code == 201, sent.text
+    message_id = sent.json()["message"]["message_id"]
+
+    deleted = client.delete(
+        f"/api/messages/{sender['user']['user_id']}/{message_id}",
+        headers=recipient["headers"],
+    )
+
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.json() == {"message_id": message_id, "hidden": True}
+    recipient_messages = client.get(
+        f"/api/messages/{sender['user']['user_id']}", headers=recipient["headers"]
+    )
+    sender_messages = client.get(
+        f"/api/messages/{recipient['user']['user_id']}", headers=sender["headers"]
+    )
+    assert recipient_messages.json()["messages"] == []
+    assert sender_messages.json()["messages"][0]["message_text"] == "Can you still see this?"
+
+
 def test_chat_websocket_broadcasts_new_messages(client, make_user):
     sender = make_user(verified=True)
     recipient = make_user(verified=True)
