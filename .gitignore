@@ -1,0 +1,16 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+.DS_Store
+*.orig
+*.pkl
+market_report.pdf
+uploads/
+.pytest_cache/
+.ruff_cache/

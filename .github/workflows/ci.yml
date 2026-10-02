@@ -1,0 +1,64 @@
+name: Campus X Mart CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  backend-check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: campusxmart_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d campusxmart_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      APP_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/campusxmart_test
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/campusxmart_test
+      JWT_SECRET_KEY: test-secret-key-that-is-long-enough-12345
+      JWT_EXPIRES_MINUTES: 60
+      CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+      - name: Lint backend
+        working-directory: backend
+        run: ruff check --select F,E9 .
+      - name: Run backend tests
+        working-directory: backend
+        run: pytest -q
+
+  frontend-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Lint frontend
+        working-directory: frontend
+        run: npm run lint
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build

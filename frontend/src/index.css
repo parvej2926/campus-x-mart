@@ -1,0 +1,165 @@
+@import "tailwindcss";
+
+:root {
+  font-family: Inter, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color: #1f2937;
+  background: #f5f7fb;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: #f5f7fb;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+main {
+  min-height: 80vh;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+
+/* =========================
+   VIDEO
+========================= */
+
+.video-section {
+  margin: 24px 0;
+}
+
+.product-video {
+  width: 100%;
+  height: 280px;
+  border: 0;
+  border-radius: 10px;
+}
+
+
+/* =========================
+   MOBILE RESPONSIVE
+========================= */
+
+@media (max-width: 768px) {
+
+  nav {
+    padding: 14px 20px;
+  }
+
+  .hero {
+    padding: 70px 20px;
+  }
+
+  .hero h1 {
+    font-size: 36px;
+  }
+
+  .hero p {
+    font-size: 16px;
+  }
+
+  .category-section {
+    margin-top: 50px;
+  }
+
+  .categories {
+    gap: 15px;
+  }
+
+  .category-card {
+    width: 45%;
+    min-width: 150px;
+  }
+
+  .products {
+    padding: 0 15px;
+  }
+
+  .product-card {
+    width: 100%;
+    max-width: 350px;
+  }
+}
+
+
+/* =========================
+   SMALL PHONE
+========================= */
+
+@media (max-width: 600px) {
+
+  nav {
+    flex-direction: column;
+    gap: 15px;
+    text-align: center;
+  }
+
+  .nav-links {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .hero {
+    padding: 60px 15px;
+  }
+
+  .hero h1 {
+    font-size: 32px;
+  }
+
+  .hero p {
+    font-size: 15px;
+  }
+
+  .category-section h2 {
+    font-size: 26px;
+  }
+
+  .category-card {
+    width: 100%;
+    max-width: 280px;
+  }
+
+  .form-section {
+    margin: 25px auto;
+    padding: 0 15px;
+  }
+
+  form {
+    padding: 20px;
+  }
+
+  .product-controls {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .campus-map {
+    height: 220px;
+  }
+
+  .product-video {
+    height: 220px;
+  }
+}

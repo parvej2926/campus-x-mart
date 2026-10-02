@@ -1,0 +1,12 @@
+fastapi==0.128.8
+uvicorn[standard]==0.39.0
+psycopg2-binary==2.9.12
+PyJWT==2.14.0
+python-multipart==0.0.20
+graphene==3.4.3
+reportlab==5.0.1
+pydantic-settings==2.6.1
+requests==2.32.3
+slowapi==0.1.9
+cloudinary==1.44.1
+twilio==9.9.1
