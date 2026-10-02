@@ -339,11 +339,16 @@ export default function WorkspaceApp() {
 
   useEffect(() => {
     if (!mobileMenuOpen) return undefined;
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     const onKeyDown = (event) => {
       if (event.key === "Escape") setMobileMenuOpen(false);
     };
     document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = originalOverflow;
+    };
   }, [mobileMenuOpen]);
 
   useEffect(() => {
@@ -1086,15 +1091,25 @@ export default function WorkspaceApp() {
 
       {mobileMenuOpen && <>
         <button className="mobile-menu-backdrop" aria-label="Close navigation menu" onClick={() => setMobileMenuOpen(false)} />
-        <nav className="mobile-menu-panel" id="mobile-menu-panel" aria-label="More navigation">
-          <p className="mobile-menu-heading">MORE</p>
-          {navigation.filter((item) => !mobileNavigation.some((tab) => tab.path === item.path) && (item.path !== "/admin/moderation" || user?.admin_session)).map((item) => (
-            <button key={item.path} className={`mobile-menu-item${route === item.path ? " mobile-menu-item-active" : ""}`} onClick={() => navigate(item.path)}>
-              <span>{item.label}</span><span aria-hidden="true">→</span>
-            </button>
-          ))}
-          <button className="mobile-menu-logout" onClick={logout}>Log out</button>
-        </nav>
+        <aside className="mobile-drawer" id="mobile-menu-panel" aria-label="Main menu">
+          <header className="mobile-drawer-header">
+            <Brand />
+            <button className="mobile-drawer-close" aria-label="Close menu" onClick={() => setMobileMenuOpen(false)}>×</button>
+          </header>
+          <p className="mobile-drawer-heading">CAMPUS X MART</p>
+          <nav className="mobile-drawer-nav" aria-label="All sections">
+            {navigation.filter((item) => item.path !== "/admin/moderation" || user?.admin_session).map((item) => (
+              <button key={item.path} className={`mobile-drawer-link${route === item.path ? " mobile-drawer-link-active" : ""}`} aria-current={route === item.path ? "page" : undefined} onClick={() => navigate(item.path)}>
+                <span className="mobile-drawer-index">{item.index}</span><span>{item.label}</span>{item.path === "/notifications" && unreadNotifications > 0 && <span className="notification-badge">{unreadNotifications > 99 ? "99+" : unreadNotifications}</span>}{item.path === "/account" && !verified && <span className="side-dot" aria-label="Verification needed" />}
+              </button>
+            ))}
+          </nav>
+          <div className="mobile-drawer-account">
+            <span className="sidebar-user-mark">{user?.full_name?.slice(0, 1).toUpperCase() || "S"}</span>
+            <span className="mobile-drawer-user">{user?.full_name || user?.username}</span>
+            <button className="mobile-menu-logout" onClick={logout}>Log out</button>
+          </div>
+        </aside>
       </>}
 
       <nav className="mobile-bottom-nav" aria-label="Primary navigation">
@@ -1105,8 +1120,8 @@ export default function WorkspaceApp() {
             {item.path === "/notifications" && unreadNotifications > 0 && <span className="mobile-tab-badge">{unreadNotifications > 99 ? "99+" : unreadNotifications}</span>}
           </button>
         ))}
-        <button className={`mobile-tab${mobileMenuOpen || !mobileNavigation.some((item) => item.path === route) ? " mobile-tab-active" : ""}`} aria-expanded={mobileMenuOpen} aria-controls="mobile-menu-panel" onClick={() => setMobileMenuOpen((open) => !open)}>
-          <span className="mobile-tab-icon mobile-tab-icon-more" aria-hidden="true">•••</span><span>More</span>
+        <button className={`mobile-tab${mobileMenuOpen || !mobileNavigation.some((item) => item.path === route) ? " mobile-tab-active" : ""}`} aria-label="Open menu" aria-expanded={mobileMenuOpen} aria-controls="mobile-menu-panel" onClick={() => setMobileMenuOpen((open) => !open)}>
+          <span className="hamburger-mark" aria-hidden="true"><i /><i /><i /></span><span>Menu</span>
         </button>
       </nav>
 
