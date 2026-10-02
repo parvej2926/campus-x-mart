@@ -598,6 +598,14 @@ def require_posting_allowed(cursor, user_id: int) -> None:
         raise HTTPException(status_code=403, detail="Your account is restricted from posting marketplace content.")
 
 
+def require_verified_contact(user: dict) -> None:
+    if not (user.get("email_verified") or user.get("phone_verified")):
+        raise HTTPException(
+            status_code=403,
+            detail="Verify your email or phone number in Account & verification before posting or purchasing.",
+        )
+
+
 def register_user(request: Request, payload: RegistrationRequest):
     connection = get_connection()
     try:
@@ -1022,6 +1030,7 @@ def my_listings(user: dict = Depends(get_current_user)):
 
 @app.post("/api/listings", status_code=status.HTTP_201_CREATED)
 def create_listing(payload: ListingRequest, user: dict = Depends(get_current_user)):
+    require_verified_contact(user)
     connection = get_connection()
     try:
         with connection.cursor() as cursor:
@@ -1046,6 +1055,7 @@ def create_listing(payload: ListingRequest, user: dict = Depends(get_current_use
 
 @app.post("/api/listings/{item_id}/media", status_code=status.HTTP_201_CREATED)
 async def upload_listing_media(item_id: int, file: UploadFile = File(...), user: dict = Depends(get_current_user)):
+    require_verified_contact(user)
     content_type = file.content_type or "application/octet-stream"
     is_image = content_type.startswith("image/")
     if not is_image and content_type not in ALLOWED_FILE_TYPES:
@@ -1106,6 +1116,7 @@ async def upload_listing_media(item_id: int, file: UploadFile = File(...), user:
 
 @app.put("/api/listings/{item_id}")
 def update_listing(item_id: int, payload: ListingRequest, user: dict = Depends(get_current_user)):
+    require_verified_contact(user)
     connection = get_connection()
     try:
         with connection.cursor() as cursor:
@@ -1156,6 +1167,7 @@ def me_route(request: Request):
 
 @app.post("/api/items", status_code=status.HTTP_201_CREATED)
 def create_item_route(payload: ItemCreateRequest, user: dict = Depends(get_current_user)):
+    require_verified_contact(user)
     connection = get_connection()
     try:
         with connection.cursor() as cursor:
@@ -1729,6 +1741,7 @@ def order_record(cursor, order_id: int, current_user_id: int, lock: bool = False
 
 @app.post("/api/items/{item_id}/orders", status_code=status.HTTP_201_CREATED)
 def create_order(item_id: int, user: dict = Depends(get_current_user)):
+    require_verified_contact(user)
     connection = get_connection()
     try:
         with connection.cursor() as cursor:

@@ -87,6 +87,10 @@ function money(value) {
   return `৳${new Intl.NumberFormat("en-BD", { maximumFractionDigits: 0 }).format(Number(value) || 0)}`;
 }
 
+function hasVerifiedContact(user) {
+  return Boolean(user?.email_verified || user?.phone_verified);
+}
+
 function localDateInputValue(value = new Date()) {
   const year = value.getFullYear();
   const month = String(value.getMonth() + 1).padStart(2, "0");
@@ -684,6 +688,11 @@ export default function WorkspaceApp() {
 
   async function saveListing(event) {
     event.preventDefault();
+    if (!hasVerifiedContact(user)) {
+      navigate("/account");
+      setNotice("Verify your email or phone number before posting a listing.");
+      return;
+    }
     setNotice("");
     setBusy(true);
     try {
@@ -924,6 +933,11 @@ export default function WorkspaceApp() {
   }
 
   async function requestProductOrder(product) {
+    if (!hasVerifiedContact(user)) {
+      navigate("/account");
+      setNotice("Verify your email or phone number before requesting to buy.");
+      return;
+    }
     try {
       const result = await api(`/api/items/${product.item_id}/orders`, "POST");
       setOrders((current) => [result.order, ...current]);
@@ -1004,6 +1018,11 @@ export default function WorkspaceApp() {
 
   async function uploadMedia(itemId, file) {
     if (!file) return;
+    if (!hasVerifiedContact(user)) {
+      navigate("/account");
+      setNotice("Verify your email or phone number before adding listing media.");
+      return;
+    }
     const formData = new FormData();
     formData.append("file", file);
     try {
@@ -1057,7 +1076,7 @@ export default function WorkspaceApp() {
   }
 
   const availableCount = items.filter((item) => item.status === "AVAILABLE").length;
-  const verified = Boolean(user?.email_verified || user?.phone_verified);
+  const verified = hasVerifiedContact(user);
   const visibleItems = items.filter((item) => {
     const matchesText = `${item.name} ${item.category} ${item.description}`.toLowerCase().includes(search.toLowerCase());
     return matchesText && (statusFilter === "ALL" || item.status === statusFilter);
@@ -1145,7 +1164,7 @@ export default function WorkspaceApp() {
           </>}
 
           {route === "/products" && <>
-            <PageHeading kicker="FROM YOUR CAMPUS" title="Products" detail="Find something useful. Ask the seller. Keep it local." />
+            <PageHeading kicker="FROM YOUR CAMPUS" title="Products" detail={verified ? "Find something useful. Ask the seller. Keep it local." : "Verify your email or phone to request a purchase."} action={!verified && <button className="button button-dark" onClick={() => navigate("/account")}>Verify contact <span aria-hidden="true">↗</span></button>} />
             <div className="product-toolbar">
               <label className="search-control"><span aria-hidden="true">⌕</span><input aria-label="Search products" placeholder="Search products" value={productSearch} onChange={(event) => { setProductSearch(event.target.value); setProductPage(1); }} /></label>
               <label className="filter-control"><span className="visually-hidden">Filter products by category</span><select value={productCategory} onChange={(event) => { setProductCategory(event.target.value); setProductPage(1); }}><option value="">All categories</option>{categories.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
@@ -1236,7 +1255,7 @@ export default function WorkspaceApp() {
           </>}
 
           {route === "/sell" && <>
-            <PageHeading kicker="SELL SOMETHING USEFUL" title={editingId ? "Edit your item" : "Sell an item"} detail="A clear description helps the right person find it." />
+            <PageHeading kicker="SELL SOMETHING USEFUL" title={editingId ? "Edit your item" : "Sell an item"} detail={verified ? "A clear description helps the right person find it." : "Verify your email or phone before posting a listing."} action={!verified && <button className="button button-dark" onClick={() => navigate("/account")}>Verify contact <span aria-hidden="true">↗</span></button>} />
             <form className="listing-editor" onSubmit={saveListing}>
               <div className="editor-main">
                 <Field id="listing-name" label="What are you selling?" name="name" placeholder="e.g. Calculus textbook, barely used" value={listing.name} onChange={updateListing} required minLength={2} maxLength={150} />
@@ -1254,7 +1273,7 @@ export default function WorkspaceApp() {
                 <div className="location-field-row"><label className="field" htmlFor="listing-location"><span>Meetup location</span><select id="listing-location" name="location_id" value={listing.location_id} onChange={updateListing}><option value="">No location selected</option>{locations.map((location) => <option key={location.location_id} value={location.location_id}>{location.location_name}{location.campus_name ? ` · ${location.campus_name}` : ""}</option>)}</select></label><button type="button" className="button button-outline add-location-button" onClick={() => setLocationFormOpen((open) => !open)}>{locationFormOpen ? "Close" : "＋ Add location"}</button></div>
                 {locationFormOpen && <div className="location-create-form"><div className="form-row"><Field id="new-location-name" label="Location name" name="location_name" placeholder="e.g. Library entrance" value={locationDraft.location_name} onChange={(event) => setLocationDraft((current) => ({ ...current, location_name: event.target.value }))} required minLength={1} maxLength={100} /><Field id="new-location-campus" label="Campus" name="campus_name" placeholder="Campus name" value={locationDraft.campus_name} onChange={(event) => setLocationDraft((current) => ({ ...current, campus_name: event.target.value }))} maxLength={100} /></div><Field id="new-location-address" label="Address or directions" name="address" placeholder="Building, street, or meeting point" value={locationDraft.address} onChange={(event) => setLocationDraft((current) => ({ ...current, address: event.target.value }))} /><div className="form-row"><Field id="new-location-latitude" label="Latitude (optional)" name="latitude" type="number" min="-90" max="90" step="any" placeholder="23.7806" value={locationDraft.latitude} onChange={(event) => setLocationDraft((current) => ({ ...current, latitude: event.target.value }))} /><Field id="new-location-longitude" label="Longitude (optional)" name="longitude" type="number" min="-180" max="180" step="any" placeholder="90.4070" value={locationDraft.longitude} onChange={(event) => setLocationDraft((current) => ({ ...current, longitude: event.target.value }))} /></div><div className="location-create-actions"><span>Coordinates enable a precise map preview.</span><button type="button" className="button button-dark" disabled={locationBusy} onClick={createLocation}>{locationBusy ? "Adding…" : "Add to campus locations"}</button></div></div>}
                 {selectedLocation && <div className="map-preview"><div className="map-preview-heading"><div><strong>{selectedLocation.location_name}</strong><span>{selectedLocation.campus_name || selectedLocation.address || "Campus meetup point"}</span></div><a href={mapLinkUrl} target="_blank" rel="noreferrer">Open map ↗</a></div><iframe src={mapEmbedUrl} title={`Map for ${selectedLocation.location_name}`} loading="lazy" referrerPolicy="no-referrer-when-downgrade" /></div>}
-                <div className="editor-actions"><button type="button" className="button button-quiet" onClick={() => { setListing(blankListing); setEditingId(null); navigate("/listings"); }}>Cancel</button><button className="button button-dark" disabled={busy}>{busy ? "Saving…" : editingId ? "Save changes" : "Publish item"}<span aria-hidden="true">↗</span></button></div>
+                <div className="editor-actions"><button type="button" className="button button-quiet" onClick={() => { setListing(blankListing); setEditingId(null); navigate("/listings"); }}>Cancel</button><button className="button button-dark" disabled={busy || !verified}>{busy ? "Saving…" : !verified ? "Verify to publish" : editingId ? "Save changes" : "Publish item"}<span aria-hidden="true">↗</span></button></div>
               </div>
               <aside className="editor-note"><span className="note-mark">A good listing</span><h3>Clear beats clever.</h3><p>Use a specific title, be honest about condition, and mention any details you’d want to know as a buyer.</p><div className="note-rule" /><span className="note-small">YOUR ITEM. YOUR PRICE. YOUR CAMPUS.</span></aside>
             </form>
