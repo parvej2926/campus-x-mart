@@ -1280,7 +1280,7 @@ export default function WorkspaceApp() {
           </>}
 
           {route === "/account" && <>
-            <PageHeading kicker="YOUR PROFILE" title="Account & verification" detail="Keep your contact details trusted and up to date." />
+            <PageHeading kicker="YOUR PROFILE" title="Account & verification" detail="Keep your contact details trusted and up to date." action={<button className="button button-outline" onClick={logout}>Sign out</button>} />
             <div className="account-grid">
               <section className="account-summary"><div className="profile-mark">{user?.full_name?.slice(0, 1).toUpperCase() || "S"}</div><p className="eyebrow">CAMPUS MEMBER</p><h2>{user?.full_name || user?.username}</h2><p>{user?.email}</p><span className="member-since">Username <strong>@{user?.username}</strong></span></section>
               <section className="verification-panel"><div className="verification-heading"><div><p className="eyebrow">ACCOUNT TRUST</p><h2>Verify a contact method</h2></div><span className={`verification-state${verified ? " verified" : ""}`}>{verified ? "Verified" : "Action needed"}</span></div><p className="verification-copy">Verify your email or phone number to build trust with other students.</p>
