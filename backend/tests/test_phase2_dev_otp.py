@@ -99,6 +99,8 @@ def test_send_verification_does_not_expose_code_by_default(monkeypatch):
 
 
 def test_email_sender_uses_starttls_without_logging_code(monkeypatch):
+    monkeypatch.setattr(settings, "APP_ENV", "prod")
+    monkeypatch.setattr(settings, "EMAIL_PROVIDER", "smtp")
     monkeypatch.setattr(settings, "SMTP_HOST", "smtp.example.com")
     monkeypatch.setattr(settings, "SMTP_PORT", 587)
     monkeypatch.setattr(settings, "SMTP_USERNAME", None)
@@ -115,6 +117,55 @@ def test_email_sender_uses_starttls_without_logging_code(monkeypatch):
     message = smtp_client.send_message.call_args.args[0]
     assert message["To"] == "student@example.com"
     assert "482731" in message.get_content()
+
+
+def test_email_sender_uses_resend_https_api(monkeypatch):
+    monkeypatch.setattr(settings, "APP_ENV", "prod")
+    monkeypatch.setattr(settings, "EMAIL_PROVIDER", "resend")
+    monkeypatch.setattr(settings, "RESEND_API_KEY", "test-api-key")
+    monkeypatch.setattr(settings, "RESEND_FROM_EMAIL", "Campus X Mart <verify@example.com>")
+    post = MagicMock()
+    monkeypatch.setattr("verification_delivery.requests.post", post)
+
+    send_verification_code("EMAIL", "student@example.com", "482731")
+
+    post.assert_called_once_with(
+        "https://api.resend.com/emails",
+        headers={
+            "Authorization": "Bearer test-api-key",
+            "Content-Type": "application/json",
+        },
+        json={
+            "from": "Campus X Mart <verify@example.com>",
+            "to": ["student@example.com"],
+            "subject": "Campus X Mart verification code",
+            "text": "Your Campus X Mart verification code is 482731. It expires in 10 minutes.",
+        },
+        timeout=(3, 15),
+    )
+    post.return_value.raise_for_status.assert_called_once_with()
+
+
+def test_resend_http_failure_is_reported_without_exposing_provider_response(monkeypatch):
+    import requests
+
+    from verification_delivery import VerificationDeliveryError
+
+    monkeypatch.setattr(settings, "APP_ENV", "prod")
+    monkeypatch.setattr(settings, "EMAIL_PROVIDER", "resend")
+    monkeypatch.setattr(settings, "RESEND_API_KEY", "test-api-key")
+    monkeypatch.setattr(settings, "RESEND_FROM_EMAIL", "verify@example.com")
+    monkeypatch.setattr(
+        "verification_delivery.requests.post",
+        MagicMock(side_effect=requests.Timeout("provider timeout")),
+    )
+
+    try:
+        send_verification_code("EMAIL", "student@example.com", "482731")
+    except VerificationDeliveryError as error:
+        assert str(error) == "Email verification delivery failed."
+    else:
+        raise AssertionError("Expected delivery failure.")
 
 
 def test_sms_sender_is_pluggable(monkeypatch):

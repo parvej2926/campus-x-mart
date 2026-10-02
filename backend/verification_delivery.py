@@ -2,6 +2,8 @@ import smtplib
 from email.message import EmailMessage
 from typing import Optional, Protocol
 
+import requests
+
 from settings import settings
 
 
@@ -38,6 +40,10 @@ def send_verification_code(channel: str, destination: str, code: str) -> None:
     if settings.APP_ENV == "dev":
         return
 
+    if settings.EMAIL_PROVIDER == "resend":
+        _send_resend_email(destination, code)
+        return
+
     if not settings.SMTP_HOST or not settings.SMTP_FROM_EMAIL:
         raise VerificationDeliveryError("Email verification delivery is not configured.")
     if bool(settings.SMTP_USERNAME) != bool(settings.SMTP_PASSWORD):
@@ -58,6 +64,29 @@ def send_verification_code(channel: str, destination: str, code: str) -> None:
                 client.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
             client.send_message(message)
     except (OSError, smtplib.SMTPException) as exc:
+        raise VerificationDeliveryError("Email verification delivery failed.") from exc
+
+
+def _send_resend_email(destination: str, code: str) -> None:
+    if not settings.RESEND_API_KEY or not settings.RESEND_FROM_EMAIL:
+        raise VerificationDeliveryError("Resend email delivery is not configured.")
+    try:
+        response = requests.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {settings.RESEND_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "from": settings.RESEND_FROM_EMAIL,
+                "to": [destination],
+                "subject": "Campus X Mart verification code",
+                "text": f"Your Campus X Mart verification code is {code}. It expires in 10 minutes.",
+            },
+            timeout=(3, 15),
+        )
+        response.raise_for_status()
+    except requests.RequestException as exc:
         raise VerificationDeliveryError("Email verification delivery failed.") from exc
 
 

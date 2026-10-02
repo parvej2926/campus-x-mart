@@ -27,6 +27,15 @@ services:
       - key: EXPOSE_DEV_OTP
         value: false
 
+      - key: EMAIL_PROVIDER
+        value: resend
+
+      - key: RESEND_API_KEY
+        sync: false
+
+      - key: RESEND_FROM_EMAIL
+        sync: false
+
   - type: web
     name: campus-x-mart-web
     runtime: static
