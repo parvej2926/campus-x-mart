@@ -32,6 +32,12 @@ const navigation = [
   { path: "/sell", label: "Sell an item", index: "09" },
   { path: "/account", label: "Account & verification", index: "10" },
 ];
+const mobileNavigation = [
+  { path: "/", label: "Home", icon: "⌂" },
+  { path: "/products", label: "Products", icon: "▦" },
+  { path: "/messages", label: "Messages", icon: "✉" },
+  { path: "/notifications", label: "Alerts", icon: "!" },
+];
 
 async function api(path, method = "GET", body) {
   const token = localStorage.getItem("access_token");
@@ -243,6 +249,7 @@ function ListingRow({ item, onEdit, onDelete, onUpload }) {
 
 export default function WorkspaceApp() {
   const [path, setPath] = useState(window.location.pathname);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(() => !localStorage.getItem("access_token"));
   const [busy, setBusy] = useState(false);
@@ -325,6 +332,19 @@ export default function WorkspaceApp() {
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [route]);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") setMobileMenuOpen(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [mobileMenuOpen]);
 
   useEffect(() => {
     if (!localStorage.getItem("access_token")) return;
@@ -624,6 +644,7 @@ export default function WorkspaceApp() {
   }, [assistantMessages]);
 
   function navigate(nextPath) {
+    setMobileMenuOpen(false);
     setNotice("");
     moveTo(nextPath, setPath);
   }
@@ -1062,6 +1083,32 @@ export default function WorkspaceApp() {
           <button className="logout-button" onClick={logout} aria-label="Log out">↗</button>
         </div>
       </aside>
+
+      {mobileMenuOpen && <>
+        <button className="mobile-menu-backdrop" aria-label="Close navigation menu" onClick={() => setMobileMenuOpen(false)} />
+        <nav className="mobile-menu-panel" id="mobile-menu-panel" aria-label="More navigation">
+          <p className="mobile-menu-heading">MORE</p>
+          {navigation.filter((item) => !mobileNavigation.some((tab) => tab.path === item.path) && (item.path !== "/admin/moderation" || user?.admin_session)).map((item) => (
+            <button key={item.path} className={`mobile-menu-item${route === item.path ? " mobile-menu-item-active" : ""}`} onClick={() => navigate(item.path)}>
+              <span>{item.label}</span><span aria-hidden="true">→</span>
+            </button>
+          ))}
+          <button className="mobile-menu-logout" onClick={logout}>Log out</button>
+        </nav>
+      </>}
+
+      <nav className="mobile-bottom-nav" aria-label="Primary navigation">
+        {mobileNavigation.map((item) => (
+          <button key={item.path} className={`mobile-tab${route === item.path ? " mobile-tab-active" : ""}`} aria-current={route === item.path ? "page" : undefined} onClick={() => navigate(item.path)}>
+            <span className={`mobile-tab-icon${item.path === "/notifications" ? " mobile-tab-icon-alert" : ""}`} aria-hidden="true">{item.icon}</span>
+            <span>{item.label}</span>
+            {item.path === "/notifications" && unreadNotifications > 0 && <span className="mobile-tab-badge">{unreadNotifications > 99 ? "99+" : unreadNotifications}</span>}
+          </button>
+        ))}
+        <button className={`mobile-tab${mobileMenuOpen || !mobileNavigation.some((item) => item.path === route) ? " mobile-tab-active" : ""}`} aria-expanded={mobileMenuOpen} aria-controls="mobile-menu-panel" onClick={() => setMobileMenuOpen((open) => !open)}>
+          <span className="mobile-tab-icon mobile-tab-icon-more" aria-hidden="true">•••</span><span>More</span>
+        </button>
+      </nav>
 
       <main className="workspace-main">
         <header className="workspace-topbar">
