@@ -618,6 +618,13 @@ def register_user(request: Request, payload: RegistrationRequest):
                 (payload.username, payload.full_name.strip(), payload.email, payload.phone, hash_password(payload.password)),
             )
             user = cursor.fetchone()
+            notify_admins(
+                cursor,
+                "USER",
+                "New user registered",
+                f"{user[2]} (@{user[1]}) created an account.",
+                "/admin/moderation",
+            )
         finally:
             cursor.close()
         connection.commit()
@@ -2200,6 +2207,61 @@ def search_admin_users(q: str = Query(min_length=2, max_length=50), user: dict =
             }
             for row in rows
         ]
+    }
+
+
+@app.get("/api/admin/users")
+def list_admin_users(
+    q: str = Query(default="", max_length=100),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    user: dict = Depends(require_admin),
+):
+    query = q.strip()
+    where_clause = (
+        " WHERE POSITION(LOWER(%s) IN LOWER(username)) > 0"
+        " OR POSITION(LOWER(%s) IN LOWER(full_name)) > 0"
+        " OR POSITION(LOWER(%s) IN LOWER(email)) > 0"
+        if query
+        else ""
+    )
+    search_parameters = (query, query, query) if query else ()
+    connection = get_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(f"SELECT COUNT(*) FROM users{where_clause}", search_parameters)
+            total_count = cursor.fetchone()[0]
+            cursor.execute(
+                f"""SELECT user_id, username, full_name, email, role, email_verified, phone_verified,
+                           posting_banned, posting_ban_reason, posting_banned_at, created_at
+                    FROM users{where_clause}
+                    ORDER BY created_at DESC, user_id DESC
+                    LIMIT %s OFFSET %s""",
+                (*search_parameters, limit, offset),
+            )
+            rows = cursor.fetchall()
+    finally:
+        connection.close()
+    return {
+        "users": [
+            {
+                "user_id": row[0],
+                "username": row[1],
+                "full_name": row[2],
+                "email": row[3],
+                "role": row[4],
+                "email_verified": row[5],
+                "phone_verified": row[6],
+                "posting_banned": row[7],
+                "posting_ban_reason": row[8],
+                "posting_banned_at": row[9].isoformat() if row[9] else None,
+                "created_at": row[10].isoformat(),
+            }
+            for row in rows
+        ],
+        "total_count": total_count,
+        "limit": limit,
+        "offset": offset,
     }
 
 

@@ -31,6 +31,38 @@ def test_admin_features_require_dedicated_admin_login(client, make_user):
     assert student_admin_login.status_code == 403
 
 
+def test_admin_can_list_all_users_with_search_and_pagination(client, make_user):
+    admin = make_user(role="ADMIN", verified=True)
+    student = make_user(verified=True)
+    make_user(verified=False)
+    admin_login = client.post(
+        "/api/admin/login",
+        json={"email": admin["user"]["email"], "password": admin["password"]},
+    )
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+
+    anonymous = client.get("/api/admin/users")
+    forbidden = client.get("/api/admin/users", headers=student["headers"])
+    first_page = client.get("/api/admin/users?limit=2&offset=0", headers=admin_headers)
+    second_page = client.get("/api/admin/users?limit=2&offset=2", headers=admin_headers)
+    searched = client.get(
+        f"/api/admin/users?q={student['user']['email']}",
+        headers=admin_headers,
+    )
+
+    assert anonymous.status_code == 401
+    assert forbidden.status_code == 403
+    assert first_page.status_code == 200, first_page.text
+    assert first_page.json()["total_count"] == 3
+    assert len(first_page.json()["users"]) == 2
+    assert second_page.status_code == 200, second_page.text
+    assert len(second_page.json()["users"]) == 1
+    assert first_page.json()["users"][0]["user_id"] != second_page.json()["users"][0]["user_id"]
+    assert searched.status_code == 200, searched.text
+    assert [person["user_id"] for person in searched.json()["users"]] == [student["user"]["user_id"]]
+    assert searched.json()["users"][0]["email"] == student["user"]["email"]
+
+
 def test_student_can_report_product_and_admin_can_review_it(client, make_user, make_item):
     seller = make_user(verified=True)
     reporter = make_user(verified=True)

@@ -225,7 +225,19 @@ const bn = {
   "ADMIN WORKSPACE": "প্রশাসকের কর্মক্ষেত্র",
   "Review reports and manage who can post to the marketplace.": "রিপোর্ট পর্যালোচনা করুন এবং কারা পোস্ট করতে পারবে তা পরিচালনা করুন।",
   "Reports": "রিপোর্ট",
+  "All users": "সব ব্যবহারকারী",
   "Posting access": "পোস্ট করার অনুমতি",
+  "accounts": "টি অ্যাকাউন্ট",
+  "Newest registrations first": "নতুন নিবন্ধন আগে",
+  "Loading user accounts…": "ব্যবহারকারীর অ্যাকাউন্ট লোড হচ্ছে…",
+  "Search users by name, username, or email": "নাম, ব্যবহারকারীর নাম বা ইমেইল দিয়ে খুঁজুন",
+  "Search name, username, or email": "নাম, ব্যবহারকারীর নাম বা ইমেইল দিয়ে খুঁজুন",
+  "Admin": "প্রশাসক",
+  "Student": "শিক্ষার্থী",
+  "Unverified": "যাচাই হয়নি",
+  "Admin account": "প্রশাসক অ্যাকাউন্ট",
+  "No users match that search.": "এই অনুসন্ধানে কোনো ব্যবহারকারী মেলেনি।",
+  "No user accounts have been created yet.": "এখনও কোনো ব্যবহারকারী অ্যাকাউন্ট তৈরি হয়নি।",
   "reports": "টি রিপোর্ট",
   "No reports in this queue.": "এই তালিকায় কোনো রিপোর্ট নেই।",
   "New product reports will appear here.": "নতুন পণ্যের রিপোর্ট এখানে দেখা যাবে।",
@@ -393,6 +405,7 @@ const notificationTitles = {
   "New product comment": "নতুন পণ্যের মন্তব্য",
   "New message": "নতুন বার্তা",
   "New purchase request": "কেনার নতুন অনুরোধ",
+  "New user registered": "নতুন ব্যবহারকারী নিবন্ধিত হয়েছেন",
   "Meetup date updated": "দেখা করার তারিখ হালনাগাদ হয়েছে",
   "Order confirmed": "অর্ডার নিশ্চিত হয়েছে",
   "Order completed": "অর্ডার সম্পন্ন হয়েছে",
@@ -464,6 +477,7 @@ export function translateNotification(text, language) {
   const completed = text.match(/^Your purchase of (.+) is complete\.$/);
   const cancelled = text.match(/^The request for (.+) was cancelled\.$/);
   const reported = text.match(/^(.+) reported (.+)\.$/);
+  const registered = text.match(/^(.+) \(@(.+)\) created an account\.$/);
 
   if (message) return `${message[1]} আপনাকে একটি বার্তা পাঠিয়েছেন।`;
   if (comment) return `${comment[1]} ${comment[2]} পণ্যে মন্তব্য করেছেন।`;
@@ -473,5 +487,6 @@ export function translateNotification(text, language) {
   if (completed) return `${completed[1]} পণ্যের কেনাকাটা সম্পন্ন হয়েছে।`;
   if (cancelled) return `${cancelled[1]} পণ্যের অনুরোধ বাতিল হয়েছে।`;
   if (reported) return `${reported[1]} ${reported[2]} পণ্যটি রিপোর্ট করেছেন।`;
+  if (registered) return `${registered[1]} (@${registered[2]}) একটি অ্যাকাউন্ট তৈরি করেছেন।`;
   return text;
 }

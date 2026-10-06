@@ -100,6 +100,42 @@ def test_admins_receive_notifications_for_order_transactions(client, make_user, 
     }
 
 
+def test_new_registration_notifies_admin_in_app_and_over_websocket(client, make_user):
+    admin = make_user(role="ADMIN", verified=True)
+    admin_login = client.post(
+        "/api/admin/login",
+        json={"email": admin["user"]["email"], "password": admin["password"]},
+    )
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+    ticket_response = client.post("/api/ws/ticket", headers=admin_headers)
+    assert ticket_response.status_code == 200, ticket_response.text
+
+    with client.websocket_connect(
+        f"/api/ws/notifications?ticket={ticket_response.json()['ticket']}"
+    ) as websocket:
+        registered = client.post(
+            "/api/auth/register",
+            json={
+                "username": "new_student",
+                "full_name": "New Student",
+                "email": "new-student@example.com",
+                "password": "Password123!",
+            },
+        )
+        assert registered.status_code == 201, registered.text
+        event = websocket.receive_json()
+
+    assert event["type"] == "notification"
+    assert event["notification"]["notification_type"] == "USER"
+    assert event["notification"]["title"] == "New user registered"
+    assert "New Student" in event["notification"]["message"]
+    inbox = client.get("/api/notifications", headers=admin_headers)
+    assert any(
+        notification["notification_type"] == "USER"
+        for notification in inbox.json()["notifications"]
+    )
+
+
 def test_notifications_are_delivered_over_single_use_ticket_websocket(client, make_user):
     sender = make_user(verified=True)
     recipient = make_user(verified=True)
