@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { cloneElement, isValidElement, useEffect, useRef, useState } from "react";
 import heroImage from "./assets/hero.png";
 import { suggestCategory } from "./categorySuggestion.js";
 import { mergeCommentList } from "./commentUtils.js";
 import { buildLocationQuery, googleMapsEmbedUrl, googleMapsSearchUrl } from "./locationUtils.js";
+import { translate, translateNotification } from "./translations.js";
 import { youtubeEmbedUrl } from "./youtube.js";
 import "./Workspace.css";
 
@@ -38,6 +39,29 @@ const mobileNavigation = [
   { path: "/messages", label: "Messages", icon: "✉" },
   { path: "/notifications", label: "Alerts", icon: "!" },
 ];
+const localizableProps = new Set(["aria-label", "aria-description", "detail", "kicker", "label", "placeholder", "title"]);
+
+function Localized({ language, children }) {
+  function visit(node) {
+    if (typeof node === "string") return translate(node, language);
+    if (typeof node === "number" && language === "bn") return new Intl.NumberFormat("bn-BD").format(node);
+    if (Array.isArray(node)) return node.map(visit);
+    if (!isValidElement(node)) return node;
+    if (node.props["data-no-translate"]) return node;
+
+    const props = {};
+    for (const [key, value] of Object.entries(node.props)) {
+      if (key === "children") {
+        props.children = visit(value);
+      } else if (localizableProps.has(key) && typeof value === "string") {
+        props[key] = translate(value, language);
+      }
+    }
+    return cloneElement(node, props);
+  }
+
+  return visit(children);
+}
 
 async function api(path, method = "GET", body) {
   const token = localStorage.getItem("access_token");
@@ -59,6 +83,31 @@ function moveTo(path, setPath) {
   if (window.location.pathname !== path) window.history.pushState({}, "", path);
   setPath(path);
   window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+const languageOptions = [
+  { code: "en", label: "EN" },
+  { code: "bn", label: "বাংলা" },
+];
+
+function LanguageSwitcher({ value, onChange }) {
+  return (
+    <div className="language-switcher" role="group" aria-label={translate("Choose language", value)}>
+      {languageOptions.map((option) => (
+        <button
+          key={option.code}
+          type="button"
+          className={`language-option${value === option.code ? " language-option-active" : ""}`}
+          onClick={() => onChange(option.code)}
+          aria-pressed={value === option.code}
+          aria-label={option.code === "en" ? translate("English", value) : translate("Bangla", value)}
+          lang={option.code}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 function Brand({ light = false }) {
@@ -83,8 +132,9 @@ function Field({ label, id, multiline = false, ...props }) {
   );
 }
 
-function money(value) {
-  return `৳${new Intl.NumberFormat("en-BD", { maximumFractionDigits: 0 }).format(Number(value) || 0)}`;
+function money(value, language = "en") {
+  const locale = language === "bn" ? "bn-BD" : "en-BD";
+  return `৳${new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(Number(value) || 0)}`;
 }
 
 function hasVerifiedContact(user) {
@@ -111,38 +161,39 @@ function PageHeading({ kicker, title, detail, action }) {
   );
 }
 
-function RatingStars({ rating, onChange, label = "Product rating" }) {
+function RatingStars({ rating, onChange, label = "Product rating", language = "en" }) {
   const filledRating = Math.round(Number(rating) || 0);
   if (!onChange) {
-    return <span className="rating-stars" role="img" aria-label={`${rating ? `${rating} out of 5 stars` : "No rating"}`}>
+    return <span className="rating-stars" role="img" aria-label={rating ? `${rating} ${translate("out of 5 stars", language)}` : translate("No rating", language)}>
       {[1, 2, 3, 4, 5].map((star) => <span key={star} className={star <= filledRating ? "rating-star rating-star-filled" : "rating-star"}>★</span>)}
     </span>;
   }
   return <span className="rating-picker" role="group" aria-label={label}>
-    {[1, 2, 3, 4, 5].map((star) => <button type="button" key={star} className={star <= filledRating ? "rating-star rating-star-filled" : "rating-star"} aria-label={`${star} ${star === 1 ? "star" : "stars"}`} aria-pressed={Number(rating) === star} onClick={() => onChange(star)}>★</button>)}
+    {[1, 2, 3, 4, 5].map((star) => <button type="button" key={star} className={star <= filledRating ? "rating-star rating-star-filled" : "rating-star"} aria-label={`${new Intl.NumberFormat(language === "bn" ? "bn-BD" : "en-BD").format(star)} ${translate(star === 1 ? "star" : "stars", language)}`} aria-pressed={Number(rating) === star} onClick={() => onChange(star)}>★</button>)}
   </span>;
 }
 
-function ModerationCard({ report, onSetStatus }) {
+function ModerationCard({ report, onSetStatus, language }) {
   return (
-    <article className="moderation-report">
+    <Localized language={language}><article className="moderation-report">
       <div className="moderation-report-main">
-        <div className="moderation-report-heading"><span className={`order-state order-state-${report.status.toLowerCase()}`}>{report.status.toLowerCase()}</span><span className="order-reference">REPORT #{String(report.report_id).padStart(5, "0")}</span><time>{new Date(report.created_at).toLocaleString()}</time></div>
-        <h2>{report.item?.name || "Removed product"}</h2>
-        <p>{report.reason}</p>
-        <div className="moderation-parties"><span>Reported by <strong>{report.reporter.full_name}</strong></span>{report.reported_user && <span>Seller <strong>{report.reported_user.full_name}</strong></span>}{report.reviewer_username && <span>Reviewed by <strong>@{report.reviewer_username}</strong></span>}</div>
+        <div className="moderation-report-heading"><span className={`order-state order-state-${report.status.toLowerCase()}`}>{report.status.toLowerCase()}</span><span className="order-reference">REPORT #{String(report.report_id).padStart(5, "0")}</span><time>{new Date(report.created_at).toLocaleString(language === "bn" ? "bn-BD" : "en-BD")}</time></div>
+        <h2 data-no-translate>{report.item?.name || "Removed product"}</h2>
+        <p data-no-translate>{report.reason}</p>
+        <div className="moderation-parties"><span>Reported by <strong data-no-translate>{report.reporter.full_name}</strong></span>{report.reported_user && <span>Seller <strong data-no-translate>{report.reported_user.full_name}</strong></span>}{report.reviewer_username && <span>Reviewed by <strong data-no-translate>@{report.reviewer_username}</strong></span>}</div>
       </div>
       <div className="moderation-actions">{report.status === "OPEN" && <button className="button button-outline" onClick={() => onSetStatus(report.report_id, "REVIEWING")}>Start review</button>}{["OPEN", "REVIEWING"].includes(report.status) && <><button className="button button-dark" onClick={() => onSetStatus(report.report_id, "RESOLVED")}>Resolve</button><button className="button button-text-danger" onClick={() => onSetStatus(report.report_id, "REJECTED")}>Reject</button></>}</div>
-    </article>
+    </article></Localized>
   );
 }
 
-function Landing({ onNavigate }) {
+function Landing({ onNavigate, language, onLanguageChange }) {
   return (
-    <main className="welcome-page">
+    <Localized language={language}><main className="welcome-page">
       <header className="welcome-nav">
         <Brand />
         <div className="welcome-actions">
+          <LanguageSwitcher value={language} onChange={onLanguageChange} />
           <button className="button button-quiet" onClick={() => onNavigate("/login")}>Log in</button>
           <button className="button button-dark" onClick={() => onNavigate("/register")}>Join the marketplace <span aria-hidden="true">↗</span></button>
         </div>
@@ -167,11 +218,11 @@ function Landing({ onNavigate }) {
         <div><span className="welcome-admin-label">ADMINISTRATOR ACCESS</span><p>Manage reports and keep the marketplace safe.</p></div>
         <button className="button button-outline" onClick={() => onNavigate("/admin/login")}>Admin sign in <span aria-hidden="true">↗</span></button>
       </section>
-    </main>
+    </main></Localized>
   );
 }
 
-function AuthPage({ register, adminLogin = false, onNavigate, onSubmit, busy, notice }) {
+function AuthPage({ register, adminLogin = false, onNavigate, onSubmit, busy, notice, language, onLanguageChange }) {
   const [username, setUsername] = useState("");
   const [usernameCheck, setUsernameCheck] = useState({ value: "", available: null, message: "" });
   const normalizedUsername = username.trim().toLowerCase();
@@ -202,7 +253,7 @@ function AuthPage({ register, adminLogin = false, onNavigate, onSubmit, busy, no
   const canSubmit = !busy && (!register || (normalizedUsername.length >= 3 && !usernameChecking && !usernameTaken));
 
   return (
-    <main className="auth-page">
+    <Localized language={language}><main className="auth-page">
       <section className="auth-art">
         <img src={heroImage} alt="" />
         <div className="auth-art-shade" />
@@ -211,6 +262,7 @@ function AuthPage({ register, adminLogin = false, onNavigate, onSubmit, busy, no
       </section>
       <section className="auth-panel">
         <div className="auth-form-wrap">
+          <div className="auth-language-switcher"><LanguageSwitcher value={language} onChange={onLanguageChange} /></div>
           <button className="back-link" onClick={() => onNavigate("/")}>← Back to home</button>
           <p className="eyebrow">{register ? "NEW TO CAMPUS X MART" : adminLogin ? "ADMINISTRATOR ACCESS" : "WELCOME BACK"}</p>
           <h2>{register ? "Create your account" : adminLogin ? "Admin sign in" : "Sign in to continue"}</h2>
@@ -229,30 +281,31 @@ function AuthPage({ register, adminLogin = false, onNavigate, onSubmit, busy, no
           {adminLogin ? <p className="auth-switch">Administrator accounts only.</p> : <p className="auth-switch">{register ? "Already have an account?" : "New to the marketplace?"} <button onClick={() => onNavigate(register ? "/login" : "/register")}>{register ? "Log in" : "Create an account"}</button></p>}
         </div>
       </section>
-    </main>
+    </main></Localized>
   );
 }
 
-function ListingRow({ item, onEdit, onDelete, onUpload }) {
+function ListingRow({ item, onEdit, onDelete, onUpload, language }) {
   return (
-    <article className="listing-row">
+    <Localized language={language}><article className="listing-row">
       {item.media_url ? <img className="listing-thumb" src={item.media_url} alt="" /> : <div className="listing-thumb listing-thumb-empty" aria-hidden="true"><span>{item.category?.slice(0, 1) || "X"}</span></div>}
       <div className="listing-main">
-        <div className="listing-title-line"><h3>{item.name}</h3><span className={`status-pill status-${String(item.status).toLowerCase()}`}>{item.status}</span></div>
-        <p>{item.category} <span aria-hidden="true">·</span> {String(item.item_condition || "").replaceAll("_", " ").toLowerCase()}</p>
-        <strong className="listing-price">{money(item.price)}</strong>
+        <div className="listing-title-line"><h3 data-no-translate>{item.name}</h3><span className={`status-pill status-${String(item.status).toLowerCase()}`}>{item.status}</span></div>
+        <p><span data-no-translate>{item.category}</span> <span aria-hidden="true">·</span> {translate(String(item.item_condition || "").replaceAll("_", " ").toLowerCase().replace("used_", "used "), language)}</p>
+        <strong className="listing-price">{money(item.price, language)}</strong>
       </div>
       <div className="listing-actions">
         <button className="button button-outline" onClick={() => onEdit(item)}>Edit</button>
         <button className="button button-text-danger" onClick={() => onDelete(item.item_id)}>Delete</button>
         <label className="upload-link">Add photo<input type="file" accept="image/*,.pdf,.txt,.zip" onChange={(event) => onUpload(item.item_id, event.target.files?.[0])} /></label>
       </div>
-    </article>
+    </article></Localized>
   );
 }
 
 export default function WorkspaceApp() {
   const [path, setPath] = useState(window.location.pathname);
+  const [language, setLanguage] = useState(() => localStorage.getItem("campus_x_mart_language") === "bn" ? "bn" : "en");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(() => !localStorage.getItem("access_token"));
@@ -340,6 +393,15 @@ export default function WorkspaceApp() {
   useEffect(() => {
     setMobileMenuOpen(false);
   }, [route]);
+
+  useEffect(() => {
+    document.documentElement.lang = language;
+    try {
+      localStorage.setItem("campus_x_mart_language", language);
+    } catch {
+      setNotice(translate("Your language preference could not be saved on this device.", language));
+    }
+  }, [language]);
 
   useEffect(() => {
     if (!mobileMenuOpen) return undefined;
@@ -1082,10 +1144,10 @@ export default function WorkspaceApp() {
     navigate("/");
   }
 
-  if (!authReady) return <main className="loading-screen"><span className="loading-mark">cXm</span><p>Opening your campus market…</p></main>;
-  if (!user && route === "/") return <Landing onNavigate={navigate} />;
+  if (!authReady) return <Localized language={language}><main className="loading-screen"><span className="loading-mark">cXm</span><p>Opening your campus market…</p></main></Localized>;
+  if (!user && route === "/") return <Landing language={language} onLanguageChange={setLanguage} onNavigate={navigate} />;
   if (!user && (route === "/login" || route === "/register" || route === "/admin/login")) {
-    return <AuthPage register={route === "/register"} adminLogin={route === "/admin/login"} onNavigate={navigate} onSubmit={handleAuth} busy={busy} notice={notice} />;
+    return <AuthPage register={route === "/register"} adminLogin={route === "/admin/login"} onNavigate={navigate} onSubmit={handleAuth} busy={busy} notice={notice} language={language} onLanguageChange={setLanguage} />;
   }
 
   const availableCount = items.filter((item) => item.status === "AVAILABLE").length;
@@ -1103,9 +1165,11 @@ export default function WorkspaceApp() {
   const mapLinkUrl = locationQuery ? googleMapsSearchUrl(selectedLocation) : "";
 
   return (
-    <div className="app-shell">
+    <Localized language={language}><div className="app-shell">
       <aside className="app-sidebar">
-        <button className="sidebar-brand" onClick={() => navigate("/")}><Brand /></button>
+        <div className="sidebar-header">
+          <button className="sidebar-brand" onClick={() => navigate("/")}><Brand /></button>
+        </div>
         <div className="sidebar-section-label">WORKSPACE</div>
         <nav className="side-nav" aria-label="Main navigation">
           {navigation.filter((item) => item.path !== "/admin/moderation" || user?.admin_session).map((item) => (
@@ -1160,7 +1224,10 @@ export default function WorkspaceApp() {
       <main className="workspace-main">
         <header className="workspace-topbar">
           <span><span className="topbar-label">CAMPUS X MART</span><span className="topbar-divider">/</span>{pageTitle}</span>
-          <button className="topbar-account" onClick={() => navigate("/account")}><span className="online-dot" /> Account</button>
+          <div className="topbar-actions">
+            <LanguageSwitcher value={language} onChange={setLanguage} />
+            <button className="topbar-account" onClick={() => navigate("/account")}><span className="online-dot" /> Account</button>
+          </div>
         </header>
         <div className="workspace-content">
           {notice && <div className="notice notice-inline" role="status"><span>{notice}</span><button onClick={() => setNotice("")} aria-label="Dismiss message">×</button></div>}
@@ -1173,14 +1240,14 @@ export default function WorkspaceApp() {
               <article className="stat-block"><span className="stat-label">ACCOUNT</span><strong className={`stat-word${verified ? " is-verified" : ""}`}>{verified ? "Verified" : "In progress"}</strong><span>{verified ? "You’re cleared to sell" : "Finish verification to sell"}</span></article>
             </section>
             <div className="section-heading"><div><p className="eyebrow">A QUICK LOOK</p><h2>Recently listed</h2></div><button className="inline-link" onClick={() => navigate("/listings")}>All your listings <span aria-hidden="true">→</span></button></div>
-            {items.length ? <div className="recent-list">{items.slice(0, 3).map((item) => <ListingRow key={item.item_id} item={item} onEdit={startEditing} onDelete={deleteListing} onUpload={uploadMedia} />)}</div> : <section className="empty-state"><span className="empty-number">01</span><div><h3>Your first item starts here.</h3><p>Give a useful item a second life with your campus community.</p></div><button className="button button-outline" onClick={() => navigate("/sell")}>Sell an item <span aria-hidden="true">→</span></button></section>}
+            {items.length ? <div className="recent-list">{items.slice(0, 3).map((item) => <ListingRow key={item.item_id} item={item} onEdit={startEditing} onDelete={deleteListing} onUpload={uploadMedia} language={language} />)}</div> : <section className="empty-state"><span className="empty-number">01</span><div><h3>Your first item starts here.</h3><p>Give a useful item a second life with your campus community.</p></div><button className="button button-outline" onClick={() => navigate("/sell")}>Sell an item <span aria-hidden="true">→</span></button></section>}
           </>}
 
           {route === "/products" && <>
             <PageHeading kicker="FROM YOUR CAMPUS" title="Products" detail={verified ? "Find something useful. Ask the seller. Keep it local." : "Verify your email or phone to request a purchase."} action={!verified && <button className="button button-dark" onClick={() => navigate("/account")}>Verify contact <span aria-hidden="true">↗</span></button>} />
             <div className="product-toolbar">
               <label className="search-control"><span aria-hidden="true">⌕</span><input aria-label="Search products" placeholder="Search products" value={productSearch} onChange={(event) => { setProductSearch(event.target.value); setProductPage(1); }} /></label>
-              <label className="filter-control"><span className="visually-hidden">Filter products by category</span><select value={productCategory} onChange={(event) => { setProductCategory(event.target.value); setProductPage(1); }}><option value="">All categories</option>{categories.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
+              <label className="filter-control"><span className="visually-hidden">Filter products by category</span><select value={productCategory} onChange={(event) => { setProductCategory(event.target.value); setProductPage(1); }}><option value="">All categories</option>{categories.map((category) => <option key={category} value={category} data-no-translate>{category}</option>)}</select></label>
               <label className="filter-control"><span className="visually-hidden">Filter products by condition</span><select value={productCondition} onChange={(event) => { setProductCondition(event.target.value); setProductPage(1); }}><option value="">Any condition</option><option value="NEW">New</option><option value="USED_EXCELLENT">Used - excellent</option><option value="USED_GOOD">Used - good</option><option value="USED">Used</option></select></label>
               <label className="price-filter"><span>Min ৳</span><input type="number" min="0" max={productMaxPrice || undefined} aria-label="Minimum price" value={productMinPrice} onChange={(event) => { setProductMinPrice(event.target.value); setProductPage(1); }} /></label>
               <label className="price-filter"><span>Max ৳</span><input type="number" min={productMinPrice || 0} aria-label="Maximum price" value={productMaxPrice} onChange={(event) => { setProductMaxPrice(event.target.value); setProductPage(1); }} /></label>
@@ -1189,15 +1256,15 @@ export default function WorkspaceApp() {
             </div>
             <div className="product-results-meta"><span>{productTotal ? `${(productPage - 1) * PRODUCT_PAGE_SIZE + 1}–${Math.min(productPage * PRODUCT_PAGE_SIZE, productTotal)} of ${productTotal}` : "0 results"}</span><span>Products for your campus</span></div>
             {products.length ? <div className="product-grid">{products.map((product) => <article className="product-card" key={product.item_id}>
-              <div className="product-photo-wrap">{product.media_url ? <img className="product-photo" src={product.media_url} alt={product.name} loading="lazy" /> : <div className="product-photo product-photo-empty" aria-hidden="true"><span>{product.category.slice(0, 1).toUpperCase()}</span></div>}<span className="product-category">{product.category}</span></div>
+              <div className="product-photo-wrap">{product.media_url ? <img className="product-photo" src={product.media_url} alt={product.name} loading="lazy" /> : <div className="product-photo product-photo-empty" aria-hidden="true"><span>{product.category.slice(0, 1).toUpperCase()}</span></div>}<span className="product-category" data-no-translate>{product.category}</span></div>
               {youtubeEmbedUrl(product.video_url) && <div className="product-video-frame"><iframe src={youtubeEmbedUrl(product.video_url)} title={`Video for ${product.name}`} loading="lazy" referrerPolicy="strict-origin-when-cross-origin" sandbox="allow-scripts allow-same-origin allow-presentation" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen /></div>}
-              <div className="product-card-body"><div className="product-seller"><span className="seller-avatar">{product.seller.full_name.slice(0, 1).toUpperCase()}</span><span>{product.seller.full_name}</span></div><h2>{product.name}</h2><p className="product-description">{product.description}</p><div className="product-meta"><strong>{money(product.price)}</strong><span>{product.item_condition.replaceAll("_", " ").toLowerCase()}</span></div>
-                {product.location && <div className="product-location"><span><span aria-hidden="true">⌖</span>{product.location.location_name}{product.location.campus_name ? ` · ${product.location.campus_name}` : ""}</span><a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(product.location.latitude != null && product.location.longitude != null ? `${product.location.latitude},${product.location.longitude}` : [product.location.location_name, product.location.campus_name, product.location.address].filter(Boolean).join(", "))}`} target="_blank" rel="noreferrer">Map ↗</a></div>}
-                <div className="product-rating-summary"><RatingStars rating={product.average_rating ?? product.seller_rating} /><span>{product.average_rating !== null ? `${product.average_rating} · ${product.review_count} ${product.review_count === 1 ? "review" : "reviews"}` : product.seller_rating !== null ? `Seller ${product.seller_rating}` : "No reviews yet"}</span></div>
+              <div className="product-card-body"><div className="product-seller"><span className="seller-avatar">{product.seller.full_name.slice(0, 1).toUpperCase()}</span><span data-no-translate>{product.seller.full_name}</span></div><h2 data-no-translate>{product.name}</h2><p className="product-description" data-no-translate>{product.description}</p><div className="product-meta"><strong>{money(product.price, language)}</strong><span>{translate(product.item_condition.replaceAll("_", " ").toLowerCase().replace("used_", "used "), language)}</span></div>
+                {product.location && <div className="product-location"><span data-no-translate><span aria-hidden="true">⌖</span>{product.location.location_name}{product.location.campus_name ? ` · ${product.location.campus_name}` : ""}</span><a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(product.location.latitude != null && product.location.longitude != null ? `${product.location.latitude},${product.location.longitude}` : [product.location.location_name, product.location.campus_name, product.location.address].filter(Boolean).join(", "))}`} target="_blank" rel="noreferrer">Map ↗</a></div>}
+                <div className="product-rating-summary"><RatingStars rating={product.average_rating ?? product.seller_rating} language={language} /><span>{product.average_rating !== null ? `${product.average_rating} · ${product.review_count} ${product.review_count === 1 ? "review" : "reviews"}` : product.seller_rating !== null ? `Seller ${product.seller_rating}` : "No reviews yet"}</span></div>
                 <div className="product-actions"><button className={`product-action${product.current_reaction === "LIKE" ? " product-action-liked" : ""}`} aria-label={`${product.current_reaction === "LIKE" ? "Remove like" : "Like"} ${product.name}`} aria-pressed={product.current_reaction === "LIKE"} onClick={() => toggleProductReaction(product, "LIKE")}><span aria-hidden="true">{product.current_reaction === "LIKE" ? "♥" : "♡"}</span><span>Like {product.like_count}</span></button><button className={`product-action${product.current_reaction === "DISLIKE" ? " product-action-disliked" : ""}`} aria-label={`${product.current_reaction === "DISLIKE" ? "Remove dislike" : "Dislike"} ${product.name}`} aria-pressed={product.current_reaction === "DISLIKE"} onClick={() => toggleProductReaction(product, "DISLIKE")}><span aria-hidden="true">−</span><span>Dislike {product.dislike_count}</span></button><button className="product-action" aria-expanded={openComments === product.item_id} onClick={() => toggleProductComments(product.item_id)}><span aria-hidden="true">▤</span><span>{product.comment_count} comments</span></button><button className="product-action review-toggle" aria-expanded={openReviews === product.item_id} onClick={() => toggleProductReviews(product.item_id)}><span aria-hidden="true">★</span><span>{product.review_count} reviews</span></button>{product.seller.user_id !== user?.id && <><button className="message-seller" onClick={() => openConversationWith(product.seller)}>Message seller <span aria-hidden="true">↗</span></button><button className="order-product" onClick={() => requestProductOrder(product)} disabled={product.my_order_status === "PENDING"}>{product.my_order_status === "PENDING" ? "Request sent" : "Request to buy"}</button><button className="product-action report-toggle" onClick={() => { setReportingItem(reportingItem === product.item_id ? null : product.item_id); setReportReason(""); }}>Report</button></>}</div>
                 {reportingItem === product.item_id && <form className="product-report-form" onSubmit={(event) => submitProductReport(event, product.item_id)}><label className="field" htmlFor={`report-reason-${product.item_id}`}><span>Why are you reporting this product?</span><textarea id={`report-reason-${product.item_id}`} value={reportReason} onChange={(event) => setReportReason(event.target.value)} placeholder="Describe the issue for the moderation team." minLength={5} maxLength={2000} required /></label><div><button type="button" className="button button-quiet" onClick={() => setReportingItem(null)}>Cancel</button><button className="button button-dark">Submit report</button></div></form>}
-                {openComments === product.item_id && <section className="product-comments" aria-label={`Comments on ${product.name}`}><div className="comments-list">{(commentsByItem[product.item_id] || []).length ? commentsByItem[product.item_id].map((comment) => <article className="product-comment" key={comment.comment_id}><strong>{comment.author.full_name}</strong><p>{comment.comment_text}</p></article>) : <p className="comments-empty">No comments yet. Start the conversation.</p>}</div><form className="comment-compose" onSubmit={(event) => submitProductComment(event, product.item_id)}><input aria-label={`Write a comment on ${product.name}`} placeholder="Ask a question…" value={commentDrafts[product.item_id] || ""} onChange={(event) => setCommentDrafts((current) => ({ ...current, [product.item_id]: event.target.value }))} maxLength={1000} required /><button aria-label="Post comment">↑</button></form></section>}
-                {openReviews === product.item_id && <section className="product-reviews" aria-label={`Reviews for ${product.name}`}><div className="reviews-summary"><RatingStars rating={reviewsByItem[product.item_id]?.average_rating} /><span>{reviewsByItem[product.item_id]?.average_rating ?? "No rating"} · {reviewsByItem[product.item_id]?.review_count ?? 0} reviews</span></div>{(reviewsByItem[product.item_id]?.reviews || []).length ? reviewsByItem[product.item_id].reviews.map((review) => <article className="product-review" key={review.review_id}><div><strong>{review.author.full_name}</strong><RatingStars rating={review.rating} /></div>{review.review_text && <p>{review.review_text}</p>}</article>) : <p className="comments-empty">No reviews yet.</p>}<p className="seller-rating-note">Seller rating: {reviewsByItem[product.item_id]?.seller_rating ?? "No rating yet"}</p></section>}
+                {openComments === product.item_id && <section className="product-comments" aria-label={`Comments on ${product.name}`}><div className="comments-list">{(commentsByItem[product.item_id] || []).length ? commentsByItem[product.item_id].map((comment) => <article className="product-comment" key={comment.comment_id}><strong data-no-translate>{comment.author.full_name}</strong><p data-no-translate>{comment.comment_text}</p></article>) : <p className="comments-empty">No comments yet. Start the conversation.</p>}</div><form className="comment-compose" onSubmit={(event) => submitProductComment(event, product.item_id)}><input aria-label={`Write a comment on ${product.name}`} placeholder="Ask a question…" value={commentDrafts[product.item_id] || ""} onChange={(event) => setCommentDrafts((current) => ({ ...current, [product.item_id]: event.target.value }))} maxLength={1000} required /><button aria-label="Post comment">↑</button></form></section>}
+                {openReviews === product.item_id && <section className="product-reviews" aria-label={`Reviews for ${product.name}`}><div className="reviews-summary"><RatingStars rating={reviewsByItem[product.item_id]?.average_rating} language={language} /><span>{reviewsByItem[product.item_id]?.average_rating ?? "No rating"} · {reviewsByItem[product.item_id]?.review_count ?? 0} reviews</span></div>{(reviewsByItem[product.item_id]?.reviews || []).length ? reviewsByItem[product.item_id].reviews.map((review) => <article className="product-review" key={review.review_id}><div><strong data-no-translate>{review.author.full_name}</strong><RatingStars rating={review.rating} language={language} /></div>{review.review_text && <p data-no-translate>{review.review_text}</p>}</article>) : <p className="comments-empty">No reviews yet.</p>}<p className="seller-rating-note">Seller rating: {reviewsByItem[product.item_id]?.seller_rating ?? "No rating yet"}</p></section>}
               </div>
             </article>)}</div> : <section className="empty-state"><span className="empty-number">00</span><div><h3>No products found.</h3><p>Try another search, or be the first to share something with campus.</p></div><button className="button button-outline" onClick={() => navigate("/sell")}>Sell an item <span aria-hidden="true">→</span></button></section>}
             {productTotal > PRODUCT_PAGE_SIZE && <nav className="product-pagination" aria-label="Product pages"><span>Page {productPage} of {Math.ceil(productTotal / PRODUCT_PAGE_SIZE)}</span><div><button className="button button-outline" disabled={productPage <= 1} onClick={() => setProductPage((page) => Math.max(1, page - 1))}>← Previous</button><button className="button button-outline" disabled={productPage >= Math.ceil(productTotal / PRODUCT_PAGE_SIZE)} onClick={() => setProductPage((page) => Math.min(Math.ceil(productTotal / PRODUCT_PAGE_SIZE), page + 1))}>Next →</button></div></nav>}
@@ -1214,23 +1281,23 @@ export default function WorkspaceApp() {
                 {userSearch.trim().length >= 2 && <div className="user-search-results" aria-live="polite">
                   {searchingUsers ? <p className="user-search-status">Searching people…</p> : userSearchResults.length ? userSearchResults.map((person) => <button key={person.user_id} className="conversation-choice user-search-result" onClick={() => { setUserSearch(""); setUserSearchResults([]); openConversationWith(person); }}><span className="conversation-avatar">{person.full_name.slice(0, 1).toUpperCase()}</span><span className="conversation-summary"><strong>{person.full_name}</strong><span>@{person.username}</span></span><span className="user-search-action">Chat</span></button>) : <p className="user-search-status">No matching people found.</p>}
                 </div>}
-                {conversations.map((conversation) => <button key={conversation.user_id} className={`conversation-choice${selectedConversation === conversation.user_id ? " conversation-choice-active" : ""}`} onClick={() => { setSelectedConversation(conversation.user_id); setSelectedPeer(conversation); }}><span className="conversation-avatar">{conversation.full_name.slice(0, 1).toUpperCase()}</span><span className="conversation-summary"><strong>{conversation.full_name}</strong><span>{conversation.last_message}</span></span>{conversation.unread_count > 0 && <span className="unread-count">{conversation.unread_count}</span>}</button>)}
+                {conversations.map((conversation) => <button key={conversation.user_id} className={`conversation-choice${selectedConversation === conversation.user_id ? " conversation-choice-active" : ""}`} onClick={() => { setSelectedConversation(conversation.user_id); setSelectedPeer(conversation); }}><span className="conversation-avatar">{conversation.full_name.slice(0, 1).toUpperCase()}</span><span className="conversation-summary"><strong data-no-translate>{conversation.full_name}</strong><span data-no-translate>{conversation.last_message}</span></span>{conversation.unread_count > 0 && <span className="unread-count">{conversation.unread_count}</span>}</button>)}
                 {selectedPeer && !conversations.some((conversation) => conversation.user_id === selectedPeer.user_id) && <button className="conversation-choice conversation-choice-active" onClick={() => setSelectedConversation(selectedPeer.user_id)}><span className="conversation-avatar">{selectedPeer.full_name.slice(0, 1).toUpperCase()}</span><span className="conversation-summary"><strong>{selectedPeer.full_name}</strong><span>New conversation</span></span></button>}
                 {!conversations.length && !selectedPeer && <p className="inbox-empty">Your conversations will show up here.</p>}
               </aside>
-              <div className="message-panel">{activePeer ? <><header className="message-peer"><span className="conversation-avatar">{activePeer.full_name.slice(0, 1).toUpperCase()}</span><div><strong>{activePeer.full_name}</strong><span>@{activePeer.username}</span></div></header><div className="message-thread" aria-live="polite">{messages.length ? messages.map((message) => <article key={message.message_id} className={`message-bubble${message.sender_id === user?.id ? " message-bubble-own" : ""}`}><p>{message.message_text}</p><div className="message-bubble-meta"><time>{new Date(message.sent_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</time><button type="button" className="message-delete" onClick={() => hideMessage(message.message_id)}>Delete for me</button></div></article>) : <p className="thread-empty">Start with a question about an item or a time to meet.</p>}</div><form className="message-compose" onSubmit={sendMessage}><input aria-label="Write a message" placeholder="Write a message…" value={messageDraft} onChange={(event) => setMessageDraft(event.target.value)} maxLength={2000} required /><button className="button button-dark" disabled={!messageDraft.trim()}>Send <span aria-hidden="true">↗</span></button></form></> : <div className="message-empty"><span className="empty-number">01</span><h2>Your next conversation starts with a product.</h2><p>Open the products page and message a seller to ask a question.</p><button className="button button-outline" onClick={() => navigate("/products")}>Explore products <span aria-hidden="true">→</span></button></div>}</div>
+              <div className="message-panel">{activePeer ? <><header className="message-peer"><span className="conversation-avatar">{activePeer.full_name.slice(0, 1).toUpperCase()}</span><div><strong data-no-translate>{activePeer.full_name}</strong><span data-no-translate>@{activePeer.username}</span></div></header><div className="message-thread" aria-live="polite">{messages.length ? messages.map((message) => <article key={message.message_id} className={`message-bubble${message.sender_id === user?.id ? " message-bubble-own" : ""}`}><p data-no-translate>{message.message_text}</p><div className="message-bubble-meta"><time>{new Date(message.sent_at).toLocaleTimeString(language === "bn" ? "bn-BD" : "en-BD", { hour: "numeric", minute: "2-digit" })}</time><button type="button" className="message-delete" onClick={() => hideMessage(message.message_id)}>{translate("Delete for me", language)}</button></div></article>) : <p className="thread-empty">{translate("Start with a question about an item or a time to meet.", language)}</p>}</div><form className="message-compose" onSubmit={sendMessage}><input aria-label="Write a message" placeholder="Write a message…" value={messageDraft} onChange={(event) => setMessageDraft(event.target.value)} maxLength={2000} required /><button className="button button-dark" disabled={!messageDraft.trim()}>Send <span aria-hidden="true">↗</span></button></form></> : <div className="message-empty"><span className="empty-number">01</span><h2>Your next conversation starts with a product.</h2><p>Open the products page and message a seller to ask a question.</p><button className="button button-outline" onClick={() => navigate("/products")}>Explore products <span aria-hidden="true">→</span></button></div>}</div>
             </section>
           </>}
 
           {route === "/assistant" && <>
             <PageHeading kicker="CAMPUS X MART GUIDE" title="Marketplace assistant" detail="Ask about listing, buying, orders, or account setup." action={<button className="button button-outline" onClick={resetAssistant}>New conversation</button>} />
-            <section className="assistant-shell"><div className="assistant-heading"><span className="assistant-mark" aria-hidden="true">XM</span><div><strong>Campus X Mart assistant</strong><span>Marketplace help, in plain language</span></div><span className="assistant-status"><i /> Ready</span></div><div className="assistant-thread" aria-live="polite" aria-label="Assistant conversation">{assistantMessages.map((message) => <article key={message.id} className={`assistant-message assistant-message-${message.role}`}><div className="assistant-avatar">{message.role === "user" ? user?.full_name?.slice(0, 1).toUpperCase() : "XM"}</div><div className="assistant-message-content"><p>{message.content}</p>{message.model && <span className={`assistant-source${message.model === "rule-based-fallback" ? " assistant-source-demo" : message.model === "unavailable" ? " assistant-source-error" : ""}`}>{message.model === "rule-based-fallback" ? "Demo guide" : message.model === "unavailable" ? "Unavailable" : `AI · ${message.model}`}</span>}</div></article>)}{assistantBusy && <div className="assistant-typing"><span /><span /><span /> Thinking</div>}<div ref={assistantScrollRef} /></div><div className="assistant-composer-area"><div className="assistant-suggestions"><span>TRY ASKING</span>{["How do I sell an item?", "How does an order work?", "How do I verify my account?"].map((prompt) => <button key={prompt} onClick={() => setAssistantDraft(prompt)}>{prompt}</button>)}</div><form className="assistant-composer" onSubmit={submitAssistantQuestion}><textarea aria-label="Ask the marketplace assistant" placeholder="Ask a marketplace question…" value={assistantDraft} onChange={(event) => setAssistantDraft(event.target.value)} maxLength={1900} rows={2} /><button className="button button-dark" disabled={assistantBusy || !assistantDraft.trim()}>{assistantBusy ? "Thinking…" : "Send"}<span aria-hidden="true">↗</span></button></form><p className="assistant-disclaimer">Replies may use AI or a limited demo guide, depending on configuration.</p></div></section>
+            <section className="assistant-shell"><div className="assistant-heading"><span className="assistant-mark" aria-hidden="true">XM</span><div><strong>Campus X Mart assistant</strong><span>Marketplace help, in plain language</span></div><span className="assistant-status"><i /> Ready</span></div><div className="assistant-thread" aria-live="polite" aria-label="Assistant conversation">{assistantMessages.map((message) => <article key={message.id} className={`assistant-message assistant-message-${message.role}`}><div className="assistant-avatar">{message.role === "user" ? user?.full_name?.slice(0, 1).toUpperCase() : "XM"}</div><div className="assistant-message-content"><p data-no-translate>{message.id === "welcome" ? translate(message.content, language) : message.content}</p>{message.model && <span className={`assistant-source${message.model === "rule-based-fallback" ? " assistant-source-demo" : message.model === "unavailable" ? " assistant-source-error" : ""}`}>{message.model === "rule-based-fallback" ? "Demo guide" : message.model === "unavailable" ? "Unavailable" : `AI · ${message.model}`}</span>}</div></article>)}{assistantBusy && <div className="assistant-typing"><span /><span /><span /> Thinking</div>}<div ref={assistantScrollRef} /></div><div className="assistant-composer-area"><div className="assistant-suggestions"><span>TRY ASKING</span>{["How do I sell an item?", "How does an order work?", "How do I verify my account?"].map((prompt) => <button key={prompt} onClick={() => setAssistantDraft(prompt)}>{prompt}</button>)}</div><form className="assistant-composer" onSubmit={submitAssistantQuestion}><textarea aria-label="Ask the marketplace assistant" placeholder="Ask a marketplace question…" value={assistantDraft} onChange={(event) => setAssistantDraft(event.target.value)} maxLength={1900} rows={2} /><button className="button button-dark" disabled={assistantBusy || !assistantDraft.trim()}>{assistantBusy ? "Thinking…" : "Send"}<span aria-hidden="true">↗</span></button></form><p className="assistant-disclaimer">Replies may use AI or a limited demo guide, depending on configuration.</p></div></section>
           </>}
 
           {route === "/notifications" && <>
             <PageHeading kicker="ACTIVITY ON CAMPUS" title="Notifications" detail="Messages, comments, and order updates in one place." action={unreadNotifications > 0 && <button className="button button-outline" onClick={markAllNotificationsRead}>Mark all read</button>} />
             <div className="notifications-toolbar"><div className="orders-tabs" role="group" aria-label="Filter notifications">{[["ALL", "All"], ["UNREAD", "Unread"]].map(([value, label]) => <button key={value} className={notificationFilter === value ? "orders-tab orders-tab-active" : "orders-tab"} onClick={() => setNotificationFilter(value)}>{label}</button>)}</div><span>{unreadNotifications} unread</span></div>
-            {notifications.filter((notification) => notificationFilter === "ALL" || !notification.is_read).length ? <div className="notification-list">{notifications.filter((notification) => notificationFilter === "ALL" || !notification.is_read).map((notification) => <article className={`notification-item${notification.is_read ? " notification-read" : " notification-unread"}`} key={notification.notification_id}><span className={`notification-symbol notification-symbol-${notification.notification_type.toLowerCase()}`} aria-hidden="true">{notification.notification_type === "MESSAGE" ? "✉" : notification.notification_type === "ORDER" ? "↔" : "▤"}</span><div className="notification-copy"><div className="notification-title-row"><h2>{notification.title}</h2><time>{new Date(notification.created_at).toLocaleString()}</time></div><p>{notification.message}</p><button className="inline-link" onClick={async () => { await markNotificationRead(notification); if (notification.target_url) navigate(notification.target_url); }}>{notification.target_url ? "Open" : "View"} <span aria-hidden="true">→</span></button></div>{!notification.is_read && <span className="notification-unread-dot" aria-label="Unread" />}</article>)}</div> : <section className="empty-state"><span className="empty-number">00</span><div><h3>{notificationFilter === "UNREAD" ? "You’re all caught up." : "No notifications yet."}</h3><p>Updates about messages, comments, and orders will appear here.</p></div></section>}
+            {notifications.filter((notification) => notificationFilter === "ALL" || !notification.is_read).length ? <div className="notification-list">{notifications.filter((notification) => notificationFilter === "ALL" || !notification.is_read).map((notification) => <article className={`notification-item${notification.is_read ? " notification-read" : " notification-unread"}`} key={notification.notification_id}><span className={`notification-symbol notification-symbol-${notification.notification_type.toLowerCase()}`} aria-hidden="true">{notification.notification_type === "MESSAGE" ? "✉" : notification.notification_type === "ORDER" ? "↔" : "▤"}</span><div className="notification-copy"><div className="notification-title-row"><h2>{translateNotification(notification.title, language)}</h2><time>{new Date(notification.created_at).toLocaleString(language === "bn" ? "bn-BD" : "en-BD")}</time></div><p>{translateNotification(notification.message, language)}</p><button className="inline-link" onClick={async () => { await markNotificationRead(notification); if (notification.target_url) navigate(notification.target_url); }}>{notification.target_url ? "Open" : "View"} <span aria-hidden="true">→</span></button></div>{!notification.is_read && <span className="notification-unread-dot" aria-label="Unread" />}</article>)}</div> : <section className="empty-state"><span className="empty-number">00</span><div><h3>{notificationFilter === "UNREAD" ? "You’re all caught up." : "No notifications yet."}</h3><p>Updates about messages, comments, and orders will appear here.</p></div></section>}
           </>}
 
           {route === "/admin/moderation" && (user?.admin_session ? <>
@@ -1240,8 +1307,8 @@ export default function WorkspaceApp() {
               <button className={moderationTab === "USERS" ? "orders-tab orders-tab-active" : "orders-tab"} onClick={() => setModerationTab("USERS")}>Posting access</button>
             </div>
             {moderationTab === "REPORTS" ? <>
-              <div className="moderation-toolbar"><div className="orders-tabs" role="group" aria-label="Filter reports">{[["OPEN", "Open"], ["REVIEWING", "Reviewing"], ["RESOLVED", "Resolved"], ["REJECTED", "Rejected"], ["ALL", "All"]].map(([value, label]) => <button key={value} className={reportStatusFilter === value ? "orders-tab orders-tab-active" : "orders-tab"} onClick={() => setReportStatusFilter(value)}>{label}</button>)}</div><span>{reports.length} reports</span></div>
-              {reports.length ? <div className="moderation-list">{reports.map((report) => <ModerationCard key={report.report_id} report={report} onSetStatus={setModerationStatus} />)}</div> : <section className="empty-state"><span className="empty-number">00</span><div><h3>No reports in this queue.</h3><p>New product reports will appear here.</p></div></section>}
+              <div className="moderation-toolbar"><div className="orders-tabs" role="group" aria-label="Filter reports">{[["OPEN", "Open reports"], ["REVIEWING", "Reviewing"], ["RESOLVED", "Resolved"], ["REJECTED", "Rejected"], ["ALL", "All"]].map(([value, label]) => <button key={value} className={reportStatusFilter === value ? "orders-tab orders-tab-active" : "orders-tab"} onClick={() => setReportStatusFilter(value)}>{label}</button>)}</div><span>{reports.length} reports</span></div>
+              {reports.length ? <div className="moderation-list">{reports.map((report) => <ModerationCard key={report.report_id} report={report} onSetStatus={setModerationStatus} language={language} />)}</div> : <section className="empty-state"><span className="empty-number">00</span><div><h3>No reports in this queue.</h3><p>New product reports will appear here.</p></div></section>}
             </> : <section className="admin-users-panel">
               <div className="admin-users-controls">
                 <label className="search-control"><span aria-hidden="true">⌕</span><input type="search" aria-label="Search users by name or username" placeholder="Search name or username" value={adminUserSearch} onChange={(event) => setAdminUserSearch(event.target.value)} /></label>
@@ -1257,14 +1324,14 @@ export default function WorkspaceApp() {
             {orders.filter((order) => orderStatus === "ALL" || order.current_user_role === orderStatus).length ? <div className="orders-list">{orders.filter((order) => orderStatus === "ALL" || order.current_user_role === orderStatus).map((order) => {
               const isBuyer = order.current_user_role === "BUYER";
               const otherParty = isBuyer ? order.seller : order.buyer;
-              return <article className="order-card" key={order.order_id}><div className="order-card-main"><div className="order-topline"><span className={`order-state order-state-${order.status.toLowerCase()}`}>{order.status.toLowerCase()}</span><span className="order-reference">ORDER #{String(order.order_id).padStart(5, "0")}</span></div><h2>{order.item_name}</h2><p>{isBuyer ? "Seller" : "Buyer"}: <strong>{otherParty.full_name}</strong></p><div className="order-footer"><strong>{money(order.agreed_price)}</strong><span>{new Date(order.ordered_at).toLocaleDateString()}</span></div>{order.meetup_date && <p className="order-saved-date">Meetup date: <strong>{new Date(`${order.meetup_date}T00:00:00`).toLocaleDateString()}</strong></p>}</div><div className="order-card-actions">{["PENDING", "CONFIRMED"].includes(order.status) && <div className="order-meetup-control"><label className="field" htmlFor={`meetup-date-${order.order_id}`}><span>Meetup date</span><input id={`meetup-date-${order.order_id}`} type="date" min={localDateInputValue()} value={meetupDrafts[order.order_id] ?? order.meetup_date ?? ""} onChange={(event) => setMeetupDrafts((current) => ({ ...current, [order.order_id]: event.target.value }))} /></label><button className="button button-outline" disabled={(meetupDrafts[order.order_id] ?? order.meetup_date ?? "") === (order.meetup_date || "")} onClick={() => saveMeetupDate(order)}>Save date</button></div>}{order.status === "PENDING" && !isBuyer && <><button className="button button-dark" onClick={() => changeOrderStatus(order.order_id, "CONFIRMED")}>Confirm</button><button className="button button-outline" onClick={() => changeOrderStatus(order.order_id, "CANCELLED")}>Decline</button></>}{order.status === "PENDING" && isBuyer && <button className="button button-outline" onClick={() => changeOrderStatus(order.order_id, "CANCELLED")}>Cancel request</button>}{order.status === "CONFIRMED" && <><span className="reserved-note">Item reserved</span>{!isBuyer && <button className="button button-dark" onClick={() => changeOrderStatus(order.order_id, "COMPLETED")}>Mark completed</button>}<button className="button button-outline" onClick={() => changeOrderStatus(order.order_id, "CANCELLED")}>Cancel order</button></>}{(order.status === "CANCELLED" || order.status === "COMPLETED") && <span className="order-finished">{order.status === "COMPLETED" ? "Exchange complete" : "Request closed"}</span>}{order.status === "COMPLETED" && isBuyer && <button className="button button-outline" onClick={() => startOrderReview(order)}>{reviewsByItem[order.item_id]?.my_review ? "Edit review" : "Leave a review"}</button>}</div>{reviewingOrder === order.order_id && <form className="order-review-form" onSubmit={(event) => submitOrderReview(event, order)}><div className="review-form-heading"><div><strong>Your experience</strong><span>How was this exchange?</span></div><RatingStars rating={ratingDrafts[order.item_id] || 5} onChange={(rating) => setRatingDrafts((current) => ({ ...current, [order.item_id]: rating }))} label={`Rate ${order.item_name}`} /></div><textarea aria-label="Write your review" placeholder="Share a helpful note about the item and exchange." value={reviewDrafts[order.item_id] || ""} onChange={(event) => setReviewDrafts((current) => ({ ...current, [order.item_id]: event.target.value }))} maxLength={1200} /><div className="review-form-actions"><span>{(reviewDrafts[order.item_id] || "").length}/1200</span><button className="button button-dark">Save review</button></div></form>}</article>;
+              return <article className="order-card" key={order.order_id}><div className="order-card-main"><div className="order-topline"><span className={`order-state order-state-${order.status.toLowerCase()}`}>{order.status.toLowerCase()}</span><span className="order-reference">ORDER #{String(order.order_id).padStart(5, "0")}</span></div><h2>{order.item_name}</h2><p>{isBuyer ? "Seller" : "Buyer"}: <strong>{otherParty.full_name}</strong></p><div className="order-footer"><strong>{money(order.agreed_price, language)}</strong><span>{new Date(order.ordered_at).toLocaleDateString(language === "bn" ? "bn-BD" : "en-BD")}</span></div>{order.meetup_date && <p className="order-saved-date">Meetup date: <strong>{new Date(`${order.meetup_date}T00:00:00`).toLocaleDateString(language === "bn" ? "bn-BD" : "en-BD")}</strong></p>}</div><div className="order-card-actions">{["PENDING", "CONFIRMED"].includes(order.status) && <div className="order-meetup-control"><label className="field" htmlFor={`meetup-date-${order.order_id}`}><span>Meetup date</span><input id={`meetup-date-${order.order_id}`} type="date" min={localDateInputValue()} value={meetupDrafts[order.order_id] ?? order.meetup_date ?? ""} onChange={(event) => setMeetupDrafts((current) => ({ ...current, [order.order_id]: event.target.value }))} /></label><button className="button button-outline" disabled={(meetupDrafts[order.order_id] ?? order.meetup_date ?? "") === (order.meetup_date || "")} onClick={() => saveMeetupDate(order)}>Save date</button></div>}{order.status === "PENDING" && !isBuyer && <><button className="button button-dark" onClick={() => changeOrderStatus(order.order_id, "CONFIRMED")}>Confirm</button><button className="button button-outline" onClick={() => changeOrderStatus(order.order_id, "CANCELLED")}>Decline</button></>}{order.status === "PENDING" && isBuyer && <button className="button button-outline" onClick={() => changeOrderStatus(order.order_id, "CANCELLED")}>Cancel request</button>}{order.status === "CONFIRMED" && <><span className="reserved-note">Item reserved</span>{!isBuyer && <button className="button button-dark" onClick={() => changeOrderStatus(order.order_id, "COMPLETED")}>Mark completed</button>}<button className="button button-outline" onClick={() => changeOrderStatus(order.order_id, "CANCELLED")}>Cancel order</button></>}{(order.status === "CANCELLED" || order.status === "COMPLETED") && <span className="order-finished">{order.status === "COMPLETED" ? "Exchange complete" : "Request closed"}</span>}{order.status === "COMPLETED" && isBuyer && <button className="button button-outline" onClick={() => startOrderReview(order)}>{reviewsByItem[order.item_id]?.my_review ? "Edit review" : "Leave a review"}</button>}</div>{reviewingOrder === order.order_id && <form className="order-review-form" onSubmit={(event) => submitOrderReview(event, order)}><div className="review-form-heading"><div><strong>Your experience</strong><span>How was this exchange?</span></div><RatingStars rating={ratingDrafts[order.item_id] || 5} onChange={(rating) => setRatingDrafts((current) => ({ ...current, [order.item_id]: rating }))} label={`Rate ${order.item_name}`} language={language} /></div><textarea aria-label="Write your review" placeholder="Share a helpful note about the item and exchange." value={reviewDrafts[order.item_id] || ""} onChange={(event) => setReviewDrafts((current) => ({ ...current, [order.item_id]: event.target.value }))} maxLength={1200} /><div className="review-form-actions"><span>{(reviewDrafts[order.item_id] || "").length}/1200</span><button className="button button-dark">Save review</button></div></form>}</article>;
             })}</div> : <section className="empty-state"><span className="empty-number">00</span><div><h3>No orders here yet.</h3><p>{orderStatus === "SELLER" ? "Requests for your products will appear here." : "Browse campus products to get started."}</p></div><button className="button button-outline" onClick={() => navigate("/products")}>Explore products <span aria-hidden="true">→</span></button></section>}
           </>}
 
           {route === "/listings" && <>
             <PageHeading kicker="SELLER WORKSPACE" title="Your listings" detail="Keep track of what you’ve shared with campus." action={<button className="button button-dark" onClick={() => { setListing(blankListing); setEditingId(null); navigate("/sell"); }}>＋ Sell an item</button>} />
             <div className="list-controls"><label className="search-control"><span aria-hidden="true">⌕</span><input aria-label="Search your listings" placeholder="Search your listings" value={search} onChange={(event) => setSearch(event.target.value)} /></label><label className="filter-control"><span className="visually-hidden">Filter by status</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="ALL">All statuses</option><option value="AVAILABLE">Available</option><option value="DRAFT">Draft</option><option value="RESERVED">Reserved</option><option value="SOLD">Sold</option><option value="ARCHIVED">Archived</option></select></label></div>
-            {visibleItems.length ? <div className="listing-table">{visibleItems.map((item) => <ListingRow key={item.item_id} item={item} onEdit={startEditing} onDelete={deleteListing} onUpload={uploadMedia} />)}</div> : <section className="empty-state"><span className="empty-number">{items.length ? "00" : "01"}</span><div><h3>{items.length ? "No listings match that." : "Nothing listed yet."}</h3><p>{items.length ? "Try another search or status." : "Sell an item to get your campus shop started."}</p></div>{!items.length && <button className="button button-outline" onClick={() => navigate("/sell")}>Sell an item <span aria-hidden="true">→</span></button>}</section>}
+            {visibleItems.length ? <div className="listing-table">{visibleItems.map((item) => <ListingRow key={item.item_id} item={item} onEdit={startEditing} onDelete={deleteListing} onUpload={uploadMedia} language={language} />)}</div> : <section className="empty-state"><span className="empty-number">{items.length ? "00" : "01"}</span><div><h3>{items.length ? "No listings match that." : "Nothing listed yet."}</h3><p>{items.length ? "Try another search or status." : "Sell an item to get your campus shop started."}</p></div>{!items.length && <button className="button button-outline" onClick={() => navigate("/sell")}>Sell an item <span aria-hidden="true">→</span></button>}</section>}
           </>}
 
           {route === "/sell" && <>
@@ -1306,6 +1373,6 @@ export default function WorkspaceApp() {
           <footer className="workspace-footer"><span>Campus X Mart</span><span>Keep useful things moving.</span></footer>
         </div>
       </main>
-    </div>
+    </div></Localized>
   );
 }
