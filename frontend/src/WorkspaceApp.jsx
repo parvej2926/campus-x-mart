@@ -288,7 +288,7 @@ function AuthPage({ register, adminLogin = false, onNavigate, onSubmit, busy, no
 function ListingRow({ item, onEdit, onDelete, onUpload, language }) {
   return (
     <Localized language={language}><article className="listing-row">
-      {item.media_url ? <img className="listing-thumb" src={item.media_url} alt="" /> : <div className="listing-thumb listing-thumb-empty" aria-hidden="true"><span>{item.category?.slice(0, 1) || "X"}</span></div>}
+      {item.uploaded_video_url ? <video className="listing-thumb" src={item.uploaded_video_url} muted playsInline preload="metadata" aria-label={`Video for ${item.name}`} /> : item.media_url ? <img className="listing-thumb" src={item.media_url} alt="" /> : <div className="listing-thumb listing-thumb-empty" aria-hidden="true"><span>{item.category?.slice(0, 1) || "X"}</span></div>}
       <div className="listing-main">
         <div className="listing-title-line"><h3 data-no-translate>{item.name}</h3><span className={`status-pill status-${String(item.status).toLowerCase()}`}>{item.status}</span></div>
         <p><span data-no-translate>{item.category}</span> <span aria-hidden="true">·</span> {translate(String(item.item_condition || "").replaceAll("_", " ").toLowerCase().replace("used_", "used "), language)}</p>
@@ -297,7 +297,7 @@ function ListingRow({ item, onEdit, onDelete, onUpload, language }) {
       <div className="listing-actions">
         <button className="button button-outline" onClick={() => onEdit(item)}>Edit</button>
         <button className="button button-text-danger" onClick={() => onDelete(item.item_id)}>Delete</button>
-        <label className="upload-link">Add photo<input type="file" accept="image/*,.pdf,.txt,.zip" onChange={(event) => onUpload(item.item_id, event.target.files?.[0])} /></label>
+        <label className="upload-link">Add media<input type="file" accept="image/*,video/mp4,video/webm,video/quicktime,.pdf,.txt,.zip" onChange={(event) => onUpload(item.item_id, event.target.files?.[0])} /></label>
       </div>
     </article></Localized>
   );
@@ -1108,8 +1108,14 @@ export default function WorkspaceApp() {
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.detail || "The upload could not be completed.");
-      setItems((current) => current.map((item) => item.item_id === itemId ? { ...item, media_url: result.media.media_url } : item));
-      setNotice("Photo added to your listing.");
+      setItems((current) => current.map((item) => item.item_id === itemId
+        ? result.media.media_type === "VIDEO"
+          ? { ...item, uploaded_video_url: result.media.media_url }
+          : result.media.media_type === "IMAGE"
+            ? { ...item, media_url: result.media.media_url }
+            : item
+        : item));
+      setNotice(result.media.media_type === "VIDEO" ? "Video added to your listing." : "Photo added to your listing.");
     } catch (error) {
       setNotice(error.message);
     }
@@ -1257,6 +1263,7 @@ export default function WorkspaceApp() {
             <div className="product-results-meta"><span>{productTotal ? `${(productPage - 1) * PRODUCT_PAGE_SIZE + 1}–${Math.min(productPage * PRODUCT_PAGE_SIZE, productTotal)} of ${productTotal}` : "0 results"}</span><span>Products for your campus</span></div>
             {products.length ? <div className="product-grid">{products.map((product) => <article className="product-card" key={product.item_id}>
               <div className="product-photo-wrap">{product.media_url ? <img className="product-photo" src={product.media_url} alt={product.name} loading="lazy" /> : <div className="product-photo product-photo-empty" aria-hidden="true"><span>{product.category.slice(0, 1).toUpperCase()}</span></div>}<span className="product-category" data-no-translate>{product.category}</span></div>
+              {product.uploaded_video_url && <div className="product-video-frame"><video src={product.uploaded_video_url} controls preload="metadata" playsInline aria-label={`Uploaded video for ${product.name}`} /></div>}
               {youtubeEmbedUrl(product.video_url) && <div className="product-video-frame"><iframe src={youtubeEmbedUrl(product.video_url)} title={`Video for ${product.name}`} loading="lazy" referrerPolicy="strict-origin-when-cross-origin" sandbox="allow-scripts allow-same-origin allow-presentation" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen /></div>}
               <div className="product-card-body"><div className="product-seller"><span className="seller-avatar">{product.seller.full_name.slice(0, 1).toUpperCase()}</span><span data-no-translate>{product.seller.full_name}</span></div><h2 data-no-translate>{product.name}</h2><p className="product-description" data-no-translate>{product.description}</p><div className="product-meta"><strong>{money(product.price, language)}</strong><span>{translate(product.item_condition.replaceAll("_", " ").toLowerCase().replace("used_", "used "), language)}</span></div>
                 {product.location && <div className="product-location"><span data-no-translate><span aria-hidden="true">⌖</span>{product.location.location_name}{product.location.campus_name ? ` · ${product.location.campus_name}` : ""}</span><a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(product.location.latitude != null && product.location.longitude != null ? `${product.location.latitude},${product.location.longitude}` : [product.location.location_name, product.location.campus_name, product.location.address].filter(Boolean).join(", "))}`} target="_blank" rel="noreferrer">Map ↗</a></div>}

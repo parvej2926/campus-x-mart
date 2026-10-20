@@ -67,7 +67,9 @@ PASSWORD_ITERATIONS = 600_000
 VERIFICATION_EXPIRY_MINUTES = 10
 RESEND_COOLDOWN_SECONDS = 60
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024
+MAX_VIDEO_UPLOAD_BYTES = 25 * 1024 * 1024
 ALLOWED_FILE_TYPES = {"application/pdf", "text/plain", "application/zip"}
+ALLOWED_VIDEO_TYPES = {"video/mp4", "video/webm", "video/quicktime"}
 MAX_VERIFICATION_ATTEMPTS = 5
 ACTIVE_CHAT_CONNECTIONS = defaultdict(set)
 
@@ -414,6 +416,7 @@ def serialize_listing(row) -> dict:
         "created_at": row[8], "updated_at": row[9], "media_url": row[10] if len(row) > 10 else None,
         "location_id": row[11] if len(row) > 11 else None,
         "video_url": row[12] if len(row) > 12 else None,
+        "uploaded_video_url": row[13] if len(row) > 13 else None,
     }
 
 
@@ -1019,7 +1022,8 @@ def my_listings(user: dict = Depends(get_current_user)):
             cursor.execute(
                      """SELECT i.item_id, i.name, i.description, i.price, i.category, i.item_condition, i.available_from, i.status, i.created_at, i.updated_at,
                          (SELECT media_url FROM item_media WHERE item_id = i.item_id AND media_type = 'IMAGE' ORDER BY sort_order, media_id LIMIT 1) AS media_url,
-                         i.location_id, i.video_url
+                         i.location_id, i.video_url,
+                         (SELECT media_url FROM item_media WHERE item_id = i.item_id AND media_type = 'VIDEO' ORDER BY sort_order, media_id LIMIT 1) AS uploaded_video_url
                    FROM items i WHERE i.seller_id = %s ORDER BY i.created_at DESC""",
                 (user["id"],),
             )
@@ -1057,15 +1061,26 @@ def create_listing(payload: ListingRequest, user: dict = Depends(get_current_use
 @app.post("/api/listings/{item_id}/media", status_code=status.HTTP_201_CREATED)
 async def upload_listing_media(item_id: int, file: UploadFile = File(...), user: dict = Depends(get_current_user)):
     require_verified_contact(user)
-    content_type = file.content_type or "application/octet-stream"
+    content_type = (file.content_type or "application/octet-stream").lower()
     is_image = content_type.startswith("image/")
-    if not is_image and content_type not in ALLOWED_FILE_TYPES:
-        raise HTTPException(status_code=415, detail="Only images, PDF, text, and ZIP files are supported.")
-    content = await file.read()
+    is_video = content_type in ALLOWED_VIDEO_TYPES
+    if not is_image and not is_video and content_type not in ALLOWED_FILE_TYPES:
+        raise HTTPException(status_code=415, detail="Only images, MP4/WEBM/MOV videos, PDF, text, and ZIP files are supported.")
+    max_bytes = MAX_VIDEO_UPLOAD_BYTES if is_video else MAX_UPLOAD_BYTES
+    content = await file.read(max_bytes + 1)
     if not content:
         raise HTTPException(status_code=400, detail="The selected file is empty.")
-    if len(content) > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="Files must be 5 MB or smaller.")
+    if len(content) > max_bytes:
+        limit_mb = max_bytes // (1024 * 1024)
+        raise HTTPException(status_code=413, detail=f"Files must be {limit_mb} MB or smaller.")
+    if is_video:
+        valid_video = (
+            content.startswith(b"\x1a\x45\xdf\xa3")
+            if content_type == "video/webm"
+            else len(content) >= 12 and content[4:8] == b"ftyp"
+        )
+        if not valid_video:
+            raise HTTPException(status_code=415, detail="The uploaded file does not match its video format.")
 
     connection = get_connection()
     try:
@@ -1089,14 +1104,17 @@ async def upload_listing_media(item_id: int, file: UploadFile = File(...), user:
             api_secret=settings.CLOUDINARY_API_SECRET,
             secure=True,
         )
-        options = {"resource_type": "image" if is_image else "raw", "folder": f"campus-x-mart/listings/{item_id}"}
+        options = {
+            "resource_type": "image" if is_image else "video" if is_video else "raw",
+            "folder": f"campus-x-mart/listings/{item_id}",
+        }
         if settings.CLOUDINARY_UPLOAD_PRESET:
             options["upload_preset"] = settings.CLOUDINARY_UPLOAD_PRESET
         uploaded = cloudinary.uploader.upload(content, **options)
     except Exception as error:
         raise HTTPException(status_code=502, detail="Cloud upload failed. Please try again.") from error
 
-    media_type = "IMAGE" if is_image else "FILE"
+    media_type = "IMAGE" if is_image else "VIDEO" if is_video else "FILE"
     connection = get_connection()
     try:
         with connection.cursor() as cursor:
@@ -1268,7 +1286,8 @@ def list_products(
                               WHERE reviewed_item.seller_id = i.seller_id),
                               i.location_id, l.location_name, l.campus_name, l.address, l.latitude, l.longitude,
                               i.video_url,
-                              (SELECT COUNT(*) FROM item_reactions r WHERE r.item_id = i.item_id AND r.reaction_type = 'DISLIKE')
+                              (SELECT COUNT(*) FROM item_reactions r WHERE r.item_id = i.item_id AND r.reaction_type = 'DISLIKE'),
+                              (SELECT media_url FROM item_media WHERE item_id = i.item_id AND media_type = 'VIDEO' ORDER BY sort_order, media_id LIMIT 1)
                    FROM items i
                    JOIN users u ON u.user_id = i.seller_id
                          LEFT JOIN locations l ON l.location_id = i.location_id
@@ -1320,6 +1339,7 @@ def list_products(
                 } if row[21] is not None else None,
                 "video_url": row[27],
                 "dislike_count": row[28],
+                "uploaded_video_url": row[29],
             }
             for row in rows
         ],
