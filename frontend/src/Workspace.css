@@ -79,9 +79,9 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .auth-art-copy { position: absolute; right: 30px; bottom: 12%; left: clamp(30px, 7vw, 88px); z-index: 1; color: white; }
 .auth-art-copy h1 { font-size: clamp(44px, 5vw, 64px); }
 .auth-art-copy > p:last-child { color: rgba(255,255,255,.78); font-size: 13px; }
-.auth-panel { position: relative; display: grid; min-height: 100vh; place-items: center; padding: 76px 42px 42px; }
+.auth-panel { display: grid; min-height: 100vh; place-items: center; padding: 42px; }
 .auth-form-wrap { width: min(100%, 420px); }
-.auth-language-switcher { position: absolute; top: 20px; right: 28px; z-index: 2; }
+.auth-language-switcher { display: flex; justify-content: flex-end; margin-bottom: 20px; }
 :lang(bn) .welcome-copy h1,
 :lang(bn) .auth-art-copy h1,
 :lang(bn) .page-heading h1,
@@ -260,8 +260,7 @@ button:disabled { cursor: not-allowed; opacity: .55; }
   .auth-art-copy h1 { margin-bottom: 7px; font-size: 34px; }
   .auth-art-copy > p:last-child { margin: 0; font-size: 10px; }
   .auth-art-copy .eyebrow { margin-bottom: 7px; }
-  .auth-panel { min-height: auto; padding: 66px 22px 38px; }
-  .auth-language-switcher { top: 18px; right: 22px; }
+  .auth-panel { min-height: auto; padding: 30px 22px 38px; }
   .auth-form-wrap { max-width: 450px; }
   .back-link { margin-bottom: 32px; }
   .app-sidebar { position: sticky; top: 0; width: 100%; height: auto; padding: 12px 15px 0; border-right: 0; border-bottom: 1px solid var(--line); }

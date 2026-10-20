@@ -9,7 +9,6 @@ import "./Workspace.css";
 
 const API = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 const PRODUCT_PAGE_SIZE = 12;
-const ADMIN_USERS_PAGE_SIZE = 50;
 const blankListing = {
   name: "",
   description: "",
@@ -354,8 +353,6 @@ export default function WorkspaceApp() {
   const [moderationTab, setModerationTab] = useState("REPORTS");
   const [adminUserSearch, setAdminUserSearch] = useState("");
   const [adminUsers, setAdminUsers] = useState([]);
-  const [adminUsersTotal, setAdminUsersTotal] = useState(0);
-  const [adminUsersOffset, setAdminUsersOffset] = useState(0);
   const [adminUsersLoading, setAdminUsersLoading] = useState(false);
   const [adminBanReason, setAdminBanReason] = useState("");
   const [reportingItem, setReportingItem] = useState(null);
@@ -557,17 +554,18 @@ export default function WorkspaceApp() {
   useEffect(() => {
     if (!user || !user.admin_session || route !== "/admin/moderation" || moderationTab !== "USERS") return undefined;
     const query = adminUserSearch.trim();
+    if (query.length < 2) {
+      setAdminUsers([]);
+      setAdminUsersLoading(false);
+      return undefined;
+    }
+
     let active = true;
     const timer = window.setTimeout(() => {
       setAdminUsersLoading(true);
-      const params = new URLSearchParams({ limit: String(ADMIN_USERS_PAGE_SIZE), offset: String(adminUsersOffset) });
-      if (query) params.set("q", query);
-      api(`/api/admin/users?${params}`)
+      api(`/api/admin/users/search?q=${encodeURIComponent(query)}`)
         .then((result) => {
-          if (active) {
-            setAdminUsers(result.users || []);
-            setAdminUsersTotal(result.total_count || 0);
-          }
+          if (active) setAdminUsers(result.users || []);
         })
         .catch((error) => {
           if (active) setNotice(error.message);
@@ -581,7 +579,7 @@ export default function WorkspaceApp() {
       active = false;
       window.clearTimeout(timer);
     };
-  }, [user, route, moderationTab, adminUserSearch, adminUsersOffset]);
+  }, [user, route, moderationTab, adminUserSearch]);
 
   useEffect(() => {
     if (!user) return undefined;
@@ -916,7 +914,7 @@ export default function WorkspaceApp() {
         banned,
         reason: banned ? adminBanReason.trim() : null,
       });
-      setAdminUsers((current) => current.map((person) => person.user_id === target.user_id ? { ...person, ...result.user } : person));
+      setAdminUsers((current) => current.map((person) => person.user_id === target.user_id ? result.user : person));
       if (banned) setAdminBanReason("");
       setNotice(banned ? `${target.full_name} is now banned from posting.` : `${target.full_name} can post again.`);
     } catch (error) {
@@ -1293,34 +1291,30 @@ export default function WorkspaceApp() {
 
           {route === "/assistant" && <>
             <PageHeading kicker="CAMPUS X MART GUIDE" title="Marketplace assistant" detail="Ask about listing, buying, orders, or account setup." action={<button className="button button-outline" onClick={resetAssistant}>New conversation</button>} />
-            <section className="assistant-shell"><div className="assistant-heading"><span className="assistant-mark" aria-hidden="true">XM</span><div><strong>Campus X Mart assistant</strong><span>Marketplace help, in plain language</span></div><span className="assistant-status"><i /> Ready</span></div><div className="assistant-thread" aria-live="polite" aria-label="Assistant conversation">{assistantMessages.map((message) => <article key={message.id} className={`assistant-message assistant-message-${message.role}`}><div className="assistant-avatar">{message.role === "user" ? user?.full_name?.slice(0, 1).toUpperCase() : "XM"}</div><div className="assistant-message-content"><p data-no-translate>{message.id === "welcome" ? translate(message.content, language) : message.content}</p>{message.model && <span className={`assistant-source${message.model === "rule-based-fallback" ? " assistant-source-demo" : message.model === "unavailable" ? " assistant-source-error" : ""}`}>{message.model === "rule-based-fallback" ? "Demo guide" : message.model === "unavailable" ? "Unavailable" : `AI · ${message.model}`}</span>}</div></article>)}{assistantBusy && <div className="assistant-typing"><span /><span /><span /> Thinking</div>}<div ref={assistantScrollRef} /></div><div className="assistant-composer-area"><div className="assistant-suggestions"><span>TRY ASKING</span>{["How do I sell an item?", "How does an order work?", "How do I verify my account?"].map((prompt) => <button key={prompt} onClick={() => setAssistantDraft(prompt)}>{prompt}</button>)}</div><form className="assistant-composer" onSubmit={submitAssistantQuestion}><textarea aria-label="Ask the marketplace assistant" placeholder="Ask a marketplace question…" value={assistantDraft} onChange={(event) => setAssistantDraft(event.target.value)} maxLength={1900} rows={2} /><button className="button button-dark" disabled={assistantBusy || !assistantDraft.trim()}>{assistantBusy ? "Thinking…" : "Send"}<span aria-hidden="true">↗</span></button></form><p className="assistant-disclaimer">Replies may use AI or a limited demo guide, depending on configuration.</p></div></section>
+            <section className="assistant-shell"><div className="assistant-heading"><span className="assistant-mark" aria-hidden="true">XM</span><div><strong>Campus X Mart assistant</strong><span>Marketplace help, in plain language</span></div><span className="assistant-status"><i /> Ready</span></div><div className="assistant-thread" aria-live="polite" aria-label="Assistant conversation">{assistantMessages.map((message) => <article key={message.id} className={`assistant-message assistant-message-${message.role}`}><div className="assistant-avatar">{message.role === "user" ? user?.full_name?.slice(0, 1).toUpperCase() : "XM"}</div><div className="assistant-message-content"><p data-no-translate>{message.content}</p>{message.model && <span className={`assistant-source${message.model === "rule-based-fallback" ? " assistant-source-demo" : message.model === "unavailable" ? " assistant-source-error" : ""}`}>{message.model === "rule-based-fallback" ? "Demo guide" : message.model === "unavailable" ? "Unavailable" : `AI · ${message.model}`}</span>}</div></article>)}{assistantBusy && <div className="assistant-typing"><span /><span /><span /> Thinking</div>}<div ref={assistantScrollRef} /></div><div className="assistant-composer-area"><div className="assistant-suggestions"><span>TRY ASKING</span>{["How do I sell an item?", "How does an order work?", "How do I verify my account?"].map((prompt) => <button key={prompt} onClick={() => setAssistantDraft(prompt)}>{prompt}</button>)}</div><form className="assistant-composer" onSubmit={submitAssistantQuestion}><textarea aria-label="Ask the marketplace assistant" placeholder="Ask a marketplace question…" value={assistantDraft} onChange={(event) => setAssistantDraft(event.target.value)} maxLength={1900} rows={2} /><button className="button button-dark" disabled={assistantBusy || !assistantDraft.trim()}>{assistantBusy ? "Thinking…" : "Send"}<span aria-hidden="true">↗</span></button></form><p className="assistant-disclaimer">Replies may use AI or a limited demo guide, depending on configuration.</p></div></section>
           </>}
 
           {route === "/notifications" && <>
             <PageHeading kicker="ACTIVITY ON CAMPUS" title="Notifications" detail="Messages, comments, and order updates in one place." action={unreadNotifications > 0 && <button className="button button-outline" onClick={markAllNotificationsRead}>Mark all read</button>} />
             <div className="notifications-toolbar"><div className="orders-tabs" role="group" aria-label="Filter notifications">{[["ALL", "All"], ["UNREAD", "Unread"]].map(([value, label]) => <button key={value} className={notificationFilter === value ? "orders-tab orders-tab-active" : "orders-tab"} onClick={() => setNotificationFilter(value)}>{label}</button>)}</div><span>{unreadNotifications} unread</span></div>
-            {notifications.filter((notification) => notificationFilter === "ALL" || !notification.is_read).length ? <div className="notification-list">{notifications.filter((notification) => notificationFilter === "ALL" || !notification.is_read).map((notification) => <article className={`notification-item${notification.is_read ? " notification-read" : " notification-unread"}`} key={notification.notification_id}><span className={`notification-symbol notification-symbol-${notification.notification_type.toLowerCase()}`} aria-hidden="true">{notification.notification_type === "MESSAGE" ? "✉" : notification.notification_type === "ORDER" ? "↔" : notification.notification_type === "USER" ? "♙" : "▤"}</span><div className="notification-copy"><div className="notification-title-row"><h2>{translateNotification(notification.title, language)}</h2><time>{new Date(notification.created_at).toLocaleString(language === "bn" ? "bn-BD" : "en-BD")}</time></div><p>{translateNotification(notification.message, language)}</p><button className="inline-link" onClick={async () => { await markNotificationRead(notification); if (notification.target_url) navigate(notification.target_url); }}>{notification.target_url ? "Open" : "View"} <span aria-hidden="true">→</span></button></div>{!notification.is_read && <span className="notification-unread-dot" aria-label="Unread" />}</article>)}</div> : <section className="empty-state"><span className="empty-number">00</span><div><h3>{notificationFilter === "UNREAD" ? "You’re all caught up." : "No notifications yet."}</h3><p>Updates about messages, comments, and orders will appear here.</p></div></section>}
+            {notifications.filter((notification) => notificationFilter === "ALL" || !notification.is_read).length ? <div className="notification-list">{notifications.filter((notification) => notificationFilter === "ALL" || !notification.is_read).map((notification) => <article className={`notification-item${notification.is_read ? " notification-read" : " notification-unread"}`} key={notification.notification_id}><span className={`notification-symbol notification-symbol-${notification.notification_type.toLowerCase()}`} aria-hidden="true">{notification.notification_type === "MESSAGE" ? "✉" : notification.notification_type === "ORDER" ? "↔" : "▤"}</span><div className="notification-copy"><div className="notification-title-row"><h2>{translateNotification(notification.title, language)}</h2><time>{new Date(notification.created_at).toLocaleString(language === "bn" ? "bn-BD" : "en-BD")}</time></div><p>{translateNotification(notification.message, language)}</p><button className="inline-link" onClick={async () => { await markNotificationRead(notification); if (notification.target_url) navigate(notification.target_url); }}>{notification.target_url ? "Open" : "View"} <span aria-hidden="true">→</span></button></div>{!notification.is_read && <span className="notification-unread-dot" aria-label="Unread" />}</article>)}</div> : <section className="empty-state"><span className="empty-number">00</span><div><h3>{notificationFilter === "UNREAD" ? "You’re all caught up." : "No notifications yet."}</h3><p>Updates about messages, comments, and orders will appear here.</p></div></section>}
           </>}
 
           {route === "/admin/moderation" && (user?.admin_session ? <>
             <PageHeading kicker="ADMIN WORKSPACE" title="Moderation" detail="Review reports and manage who can post to the marketplace." />
             <div className="moderation-view-tabs" role="group" aria-label="Moderation sections">
               <button className={moderationTab === "REPORTS" ? "orders-tab orders-tab-active" : "orders-tab"} onClick={() => setModerationTab("REPORTS")}>Reports</button>
-              <button className={moderationTab === "USERS" ? "orders-tab orders-tab-active" : "orders-tab"} onClick={() => setModerationTab("USERS")}>All users</button>
+              <button className={moderationTab === "USERS" ? "orders-tab orders-tab-active" : "orders-tab"} onClick={() => setModerationTab("USERS")}>Posting access</button>
             </div>
             {moderationTab === "REPORTS" ? <>
               <div className="moderation-toolbar"><div className="orders-tabs" role="group" aria-label="Filter reports">{[["OPEN", "Open reports"], ["REVIEWING", "Reviewing"], ["RESOLVED", "Resolved"], ["REJECTED", "Rejected"], ["ALL", "All"]].map(([value, label]) => <button key={value} className={reportStatusFilter === value ? "orders-tab orders-tab-active" : "orders-tab"} onClick={() => setReportStatusFilter(value)}>{label}</button>)}</div><span>{reports.length} reports</span></div>
               {reports.length ? <div className="moderation-list">{reports.map((report) => <ModerationCard key={report.report_id} report={report} onSetStatus={setModerationStatus} language={language} />)}</div> : <section className="empty-state"><span className="empty-number">00</span><div><h3>No reports in this queue.</h3><p>New product reports will appear here.</p></div></section>}
             </> : <section className="admin-users-panel">
               <div className="admin-users-controls">
-                <label className="search-control"><span aria-hidden="true">⌕</span><input type="search" aria-label="Search users by name, username, or email" placeholder="Search name, username, or email" value={adminUserSearch} onChange={(event) => { setAdminUserSearch(event.target.value); setAdminUsersOffset(0); }} /></label>
+                <label className="search-control"><span aria-hidden="true">⌕</span><input type="search" aria-label="Search users by name or username" placeholder="Search name or username" value={adminUserSearch} onChange={(event) => setAdminUserSearch(event.target.value)} /></label>
                 <label className="field"><span>Reason for ban</span><input value={adminBanReason} onChange={(event) => setAdminBanReason(event.target.value)} maxLength={500} placeholder="Required when banning a user" /></label>
               </div>
-              <div className="moderation-toolbar"><span>{adminUsersTotal} accounts</span><span>Newest registrations first</span></div>
-              {adminUsersLoading ? <p className="admin-users-hint">Loading user accounts…</p> : adminUsers.length ? <>
-                <div className="admin-users-list">{adminUsers.map((person) => <article className="admin-user-row" key={person.user_id}><div className="admin-user-identity"><strong>{person.full_name}</strong><span>@{person.username}</span><span>{person.email}</span><span>{person.role === "ADMIN" ? "Admin" : "Student"} · {person.email_verified || person.phone_verified ? "Verified" : "Unverified"} · {new Date(person.created_at).toLocaleDateString(language === "bn" ? "bn-BD" : "en-BD")}</span></div><div className="admin-user-ban-state">{person.role !== "STUDENT" ? <span>Admin account</span> : person.posting_banned ? <><strong>Banned from posting</strong><span>{person.posting_ban_reason}</span></> : <span>Posting allowed</span>}</div>{person.role === "STUDENT" && <button className={person.posting_banned ? "button button-outline" : "button button-text-danger"} disabled={!person.posting_banned && adminBanReason.trim().length < 5} onClick={() => updatePostingBan(person)}>{person.posting_banned ? "Unban" : "Ban from posting"}</button>}</article>)}</div>
-                {adminUsersTotal > ADMIN_USERS_PAGE_SIZE && <nav className="product-pagination" aria-label="User account pages"><span>Page {Math.floor(adminUsersOffset / ADMIN_USERS_PAGE_SIZE) + 1} of {Math.ceil(adminUsersTotal / ADMIN_USERS_PAGE_SIZE)}</span><div><button className="button button-outline" disabled={adminUsersOffset === 0} onClick={() => setAdminUsersOffset((offset) => Math.max(0, offset - ADMIN_USERS_PAGE_SIZE))}>← Previous</button><button className="button button-outline" disabled={adminUsersOffset + ADMIN_USERS_PAGE_SIZE >= adminUsersTotal} onClick={() => setAdminUsersOffset((offset) => offset + ADMIN_USERS_PAGE_SIZE)}>Next →</button></div></nav>}
-              </> : <p className="admin-users-hint">{adminUserSearch.trim() ? "No users match that search." : "No user accounts have been created yet."}</p>}
+              {adminUserSearch.trim().length < 2 ? <p className="admin-users-hint">Search by at least two characters. Only student accounts are listed.</p> : adminUsersLoading ? <p className="admin-users-hint">Searching accounts…</p> : adminUsers.length ? <div className="admin-users-list">{adminUsers.map((person) => <article className="admin-user-row" key={person.user_id}><div className="admin-user-identity"><strong>{person.full_name}</strong><span>@{person.username}</span></div><div className="admin-user-ban-state">{person.posting_banned ? <><strong>Banned from posting</strong><span>{person.posting_ban_reason}</span></> : <span>Posting allowed</span>}</div><button className={person.posting_banned ? "button button-outline" : "button button-text-danger"} disabled={!person.posting_banned && adminBanReason.trim().length < 5} onClick={() => updatePostingBan(person)}>{person.posting_banned ? "Unban" : "Ban from posting"}</button></article>)}</div> : <p className="admin-users-hint">No matching student accounts.</p>}
             </section>}
           </> : <section className="empty-state"><span className="empty-number">403</span><div><h3>Admin access required.</h3><p>This moderation workspace is restricted to administrators.</p></div><button className="button button-outline" onClick={() => navigate("/")}>Back to overview</button></section>)}
 
