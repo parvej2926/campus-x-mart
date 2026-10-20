@@ -183,6 +183,11 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 
 .listing-editor { display: grid; grid-template-columns: minmax(0, 1fr) minmax(205px, .55fr); gap: clamp(30px, 6vw, 80px); align-items: start; }
 .editor-main { display: grid; gap: 18px; }
+.listing-media-field { display: grid; gap: 7px; }
+.listing-media-field > small { color: #829081; font-size: 9px; }
+.listing-media-selection { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.listing-media-selection li { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: 4px; background: white; color: var(--muted); font-size: 10px; }
+.listing-media-selection li > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
 .editor-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; padding-top: 17px; border-top: 1px solid var(--line); }
 .editor-note { margin-top: 5px; padding: 20px 0 0 22px; border-left: 2px solid var(--lime); }

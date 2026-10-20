@@ -362,6 +362,7 @@ export default function WorkspaceApp() {
   const [assistantBusy, setAssistantBusy] = useState(false);
   const [listing, setListing] = useState(blankListing);
   const [editingId, setEditingId] = useState(null);
+  const [listingMediaFiles, setListingMediaFiles] = useState([]);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [channel, setChannel] = useState("EMAIL");
@@ -748,6 +749,19 @@ export default function WorkspaceApp() {
     setListing((current) => ({ ...current, [name]: value }));
   }
 
+  async function uploadListingMediaFile(itemId, file) {
+    const formData = new FormData();
+    formData.append("file", file);
+    const response = await fetch(`${API}/api/listings/${itemId}/media`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${localStorage.getItem("access_token")}` },
+      body: formData,
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail || "The upload could not be completed.");
+    return result.media;
+  }
+
   async function saveListing(event) {
     event.preventDefault();
     if (!hasVerifiedContact(user)) {
@@ -758,15 +772,36 @@ export default function WorkspaceApp() {
     setNotice("");
     setBusy(true);
     try {
+      const wasEditing = Boolean(editingId);
       const result = await api(editingId ? `/api/listings/${editingId}` : "/api/listings", editingId ? "PUT" : "POST", {
         ...listing,
         price: Number(listing.price),
         location_id: listing.location_id ? Number(listing.location_id) : null,
       });
-      setItems((current) => editingId ? current.map((item) => item.item_id === editingId ? result.item : item) : [result.item, ...current]);
+      const savedItem = result.item;
+      if (!wasEditing) setEditingId(savedItem.item_id);
+      setItems((current) => wasEditing
+        ? current.map((item) => item.item_id === savedItem.item_id ? savedItem : item)
+        : [savedItem, ...current]);
+      for (let index = 0; index < listingMediaFiles.length; index += 1) {
+        try {
+          const media = await uploadListingMediaFile(savedItem.item_id, listingMediaFiles[index]);
+          setItems((current) => current.map((item) => item.item_id !== savedItem.item_id
+            ? item
+            : media.media_type === "VIDEO"
+              ? { ...item, uploaded_video_url: media.media_url }
+              : media.media_type === "IMAGE"
+                ? { ...item, media_url: media.media_url }
+                : item));
+        } catch (error) {
+          setListingMediaFiles((current) => current.slice(index));
+          throw new Error(`Your listing was saved, but a media upload failed: ${error.message} Try saving again to retry.`, { cause: error });
+        }
+      }
       setListing(blankListing);
+      setListingMediaFiles([]);
       setEditingId(null);
-      setNotice(editingId ? "Your listing has been updated." : "Your listing is live.");
+      setNotice(wasEditing ? "Your listing has been updated." : "Your listing is live.");
       navigate("/listings");
     } catch (error) {
       setNotice(error.message);
@@ -788,6 +823,7 @@ export default function WorkspaceApp() {
       status: item.status || "AVAILABLE",
     });
     setEditingId(item.item_id);
+    setListingMediaFiles([]);
     navigate("/sell");
   }
 
@@ -1347,6 +1383,11 @@ export default function WorkspaceApp() {
               <div className="editor-main">
                 <Field id="listing-name" label="What are you selling?" name="name" placeholder="e.g. Calculus textbook, barely used" value={listing.name} onChange={updateListing} required minLength={2} maxLength={150} />
                 <Field id="listing-description" label="Description" name="description" multiline placeholder="Share the details a buyer should know." value={listing.description} onChange={updateListing} required minLength={10} maxLength={5000} />
+                <div className="listing-media-field">
+                  <label className="field" htmlFor="listing-media">Photos or videos (optional)<input id="listing-media" type="file" accept="image/*,video/mp4,video/webm,video/quicktime" multiple onChange={(event) => setListingMediaFiles(Array.from(event.target.files || []))} /></label>
+                  <small>Add photos and MP4, WebM, or MOV videos. Videos can be up to 25 MB each; photos up to 5 MB each.</small>
+                  {listingMediaFiles.length > 0 && <ul className="listing-media-selection">{listingMediaFiles.map((file, index) => <li key={`${file.name}-${file.lastModified}-${index}`}><span>{file.name}</span><button type="button" className="inline-link" aria-label={`Remove ${file.name}`} onClick={() => setListingMediaFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))}>Remove</button></li>)}</ul>}
+                </div>
                 <div className="video-url-field"><Field id="listing-video-url" label="YouTube video (optional)" name="video_url" type="url" placeholder="https://youtu.be/..." value={listing.video_url} onChange={updateListing} maxLength={500} /><small>Valid YouTube links appear as a video preview on the product card.</small></div>
                 <div className="form-row">
                   <Field id="listing-price" label="Price (BDT)" name="price" type="number" min="0" step="1" placeholder="0" value={listing.price} onChange={updateListing} required />
