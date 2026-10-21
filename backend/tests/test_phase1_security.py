@@ -196,6 +196,26 @@ def test_image_upload_validates_and_stores_local_images(monkeypatch, tmp_path):
         app.dependency_overrides.pop(get_current_user, None)
 
 
+def test_local_image_upload_does_not_use_client_filename_as_a_path(monkeypatch, tmp_path):
+    monkeypatch.setattr("main.UPLOADS_DIR", tmp_path)
+    monkeypatch.setattr("main.settings.APP_ENV", "test")
+    app.dependency_overrides[get_current_user] = lambda: {"user_id": 1}
+    client = TestClient(app)
+
+    try:
+        response = client.post(
+            "/api/upload/image",
+            files={"file": ("../../outside.jpg", b"\xff\xd8\xff\xe0image", "image/jpeg")},
+        )
+        assert response.status_code == 200, response.text
+        filename = response.json()["secure_url"].rsplit("/", 1)[-1]
+        assert filename.endswith(".jpg")
+        assert (tmp_path / filename).is_file()
+        assert not (tmp_path.parent / "outside.jpg").exists()
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
 def test_uploads_are_served_from_static_files(monkeypatch, tmp_path):
     monkeypatch.setattr("main.UPLOADS_DIR", tmp_path)
     uploaded = tmp_path / "stored-image.jpg"

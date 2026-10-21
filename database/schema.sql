@@ -43,13 +43,14 @@ CREATE INDEX verification_codes_lookup_idx
     ON verification_codes (user_id, channel, created_at DESC)
     WHERE verified_at IS NULL;
 
--- Optional server-side refresh-token/session tracking for JWT logout/revocation.
+-- Server-side refresh-token/session tracking for rotation and revocation.
 CREATE TABLE user_sessions (
     session_id UUID PRIMARY KEY,
     user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
     refresh_token_hash VARCHAR(255) NOT NULL UNIQUE,
     expires_at TIMESTAMPTZ NOT NULL,
     revoked_at TIMESTAMPTZ,
+    admin_session BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -251,6 +252,7 @@ CREATE INDEX idx_posts_author_created ON posts (author_id, created_at DESC);
 CREATE INDEX idx_post_comments_post_created ON post_comments (post_id, created_at ASC);
 CREATE INDEX idx_item_comments_item_created ON item_comments (item_id, created_at ASC);
 CREATE INDEX idx_reviews_item ON reviews (item_id);
+CREATE UNIQUE INDEX idx_item_media_item_sort_order ON item_media (item_id, sort_order);
 CREATE INDEX idx_orders_buyer ON orders (buyer_id, ordered_at DESC);
 CREATE INDEX idx_orders_seller ON orders (seller_id, ordered_at DESC);
 CREATE UNIQUE INDEX idx_orders_one_active_per_item

@@ -1,48 +1,49 @@
 # Campus X Mart - Project Status
 
-This is an implementation inventory, not an assignment sign-off. A feature being present in code does not mean its security, correctness, or acceptance criteria are complete.
+This checklist records implemented behavior separately from operations that still
+require an operator or additional work.
 
-## Implemented Baseline
+## Implemented
 
-- [x] FastAPI API, React/Vite frontend, and PostgreSQL schema.
-- [x] Registration, login, JWT authentication, and username availability checking.
-- [x] Email/phone verification routes with hashed codes, resend cooldown, and attempt limit.
-- [x] Marketplace listing, image upload, reactions, comments, messaging, reviews, orders, and reports endpoints.
-- [x] PostgreSQL-backed one-time chat WebSocket tickets.
-- [x] Order integrity and item-state transitions, including server-side price enforcement, item reservation/sale status updates, and active-order protections.
-- [x] Private messaging and notification semantics: sender/recipient validation, unread tracking, read/read-all actions, and notification privacy.
-- [x] Admin-only report access with in-memory PDF generation and no server-path exposure.
-- [x] Admin moderation queue, posting bans/unbans, report alerts, and order-lifecycle notifications.
-- [x] Local on-device category prediction via the rule-based classifier in `ml/category_predictor.py`; this satisfies the project requirement without an unnecessary TensorFlow Lite dependency.
-- [x] Settings-based database connection configuration and GitHub Actions CI workflow.
-- [x] Test database guard requiring `TEST_DATABASE_URL` to name a `*_test` database.
+- [x] FastAPI API, React/Vite frontend, PostgreSQL schema, and PostgreSQL-backed tests.
+- [x] Registration, login, verification, admin access controls, and role-gated moderation.
+- [x] Cookie browser sessions: httpOnly access and refresh tokens, refresh rotation,
+  server-side revocation, CSRF checks, and bearer authentication for API clients.
+- [x] Marketplace listings, media upload, server-side filtering/sorting/pagination,
+  reactions, comments, messaging, reviews, orders, reports, and notifications.
+- [x] Order state protections and one active confirmed/completed order per item.
+- [x] Idempotent database migration runner with checksums and applied-version tracking.
+- [x] Unique item-media order index and row-level locking for concurrent additions.
+- [x] Thread-safe PostgreSQL connection pool, request IDs, and structured request logs.
+- [x] Non-root Docker runtime, `/healthz` liveness check, and frontend Node test script.
+- [x] CI runs focused Ruff checks, backend tests, frontend lint/tests/build.
 
-These items describe implementation presence only. Review the known gaps below and the detailed [roadmap](docs/ROADMAP.md) before treating any feature as complete.
+## Operator actions
 
-## Security Actions Required
+- [ ] Rotate the database credential exposed in repository history and update deployment
+  configuration; removing a credential from source does not revoke it.
+- [ ] Ensure any local JWT secret that may have been shared is replaced privately.
+- [ ] Verify production `CORS_ORIGINS`, HTTPS cookie settings, Cloudinary, and email/SMS
+  provider credentials in the deployment environment.
+- [ ] Provision administrators only through a trusted operator-controlled process.
 
-- [ ] Rotate the database credential exposed in repository history and update deployment configuration. Removing the source line does not revoke the old credential.
-- [ ] Replace the local `backend/.env` JWT secret with a newly generated private value. Never share `.env` or paste the secret into chat.
-- [ ] Remove tracked virtualenv files from the Git index and commit the cleanup. `.gitignore` cannot untrack files that are already committed.
-- [ ] Remove or disable the pickle-based model loading path before exposing it to requests.
-- [ ] Document a secure operator-only admin provisioning procedure for non-local deployments; public registration must never assign the ADMIN role.
+## Remaining engineering work
 
-## Known Correctness and Product Gaps
+- [ ] Split `backend/main.py` into routers, services, schemas, and database modules.
+- [ ] Move all blocking database/provider work out of async request handlers.
+- [ ] Add end-to-end frontend flow tests for login, marketplace browsing, and listing
+  creation; current frontend tests cover utilities and the shared API client.
+- [ ] Audit every form and interactive view for keyboard access, focus behavior, and
+  accessible error announcements.
+- [ ] Add broader PostgreSQL migration tests for every historical schema version.
+- [ ] Review remaining entity-existence and conflict paths for intentional 404/409
+  responses rather than database errors.
 
-- [ ] Validate entity existence and return 404/409 for invalid item, user, review, reaction, comment, and message references instead of database 500 errors.
-- [ ] Correct verification policy and delivery: the current production setup has no configured SMS provider, and the listing verification requirement must match its user-facing message.
-- [ ] Correct sorting/filtering: align UI/API sort keys and perform sorting over the full result set on the server.
-- [ ] Normalize and embed supported YouTube links consistently in both frontend and backend.
-- [ ] Deduplicate listing media on edits and add the planned uniqueness/upsert behavior.
-- [ ] Move blocking database and network operations out of async handlers; add connection pooling and request-scoped transaction handling.
-- [ ] Harden container execution, health checks, and deployment configuration.
-- [ ] Improve frontend accessibility, replace `alert()` flows, move authentication away from localStorage, and set the document title/favicon.
+## Validation
 
-## Verification Status
+Run the checks from the repository root:
 
-- [x] Backend tests, focused Ruff checks, frontend lint, and frontend build were run in the current development environment.
-- [x] Behavior tests cover orders, item CRUD, reviews, messaging, admin reports, posting bans, and admin transaction notifications.
-- [ ] Verify pinned dependency availability and the clean-install workflow in CI.
-- [ ] Complete an assignment-specific acceptance review before claiming full alignment.
-
-The project is now aligned with the required feature set for the items listed in the feature inventory. The remaining work is bounded to later hardening and operational polish, as recorded in the roadmap.
+```bash
+cd backend && ruff check --select F,E9 . && pytest -q
+cd ../frontend && npm ci && npm run lint && npm test && npm run build
+```

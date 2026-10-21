@@ -1,18 +1,18 @@
-def test_admin_features_require_dedicated_admin_login(client, make_user):
+def test_admin_features_require_dedicated_admin_login(client, make_user, token_headers):
     admin = make_user(role="ADMIN", verified=True)
 
     normal_login = client.post(
         "/api/auth/login",
         json={"email": admin["user"]["email"], "password": admin["password"]},
     )
-    normal_headers = {"Authorization": f"Bearer {normal_login.json()['access_token']}"}
+    normal_headers = token_headers(admin["user"])
     normal_admin_queue = client.get("/api/admin/reports", headers=normal_headers)
 
     admin_login = client.post(
         "/api/admin/login",
         json={"email": admin["user"]["email"], "password": admin["password"]},
     )
-    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+    admin_headers = token_headers(admin["user"], admin_session=True)
     admin_queue = client.get("/api/admin/reports", headers=admin_headers)
 
     student = make_user(verified=True)
@@ -22,6 +22,7 @@ def test_admin_features_require_dedicated_admin_login(client, make_user):
     )
 
     assert normal_login.status_code == 200, normal_login.text
+    assert "access_token" not in normal_login.json()
     assert normal_login.json()["user"]["role"] == "ADMIN"
     assert normal_login.json()["user"]["admin_session"] is False
     assert normal_admin_queue.status_code == 403
@@ -31,15 +32,11 @@ def test_admin_features_require_dedicated_admin_login(client, make_user):
     assert student_admin_login.status_code == 403
 
 
-def test_admin_can_list_all_users_with_search_and_pagination(client, make_user):
+def test_admin_can_list_all_users_with_search_and_pagination(client, make_user, token_headers):
     admin = make_user(role="ADMIN", verified=True)
     student = make_user(verified=True)
     make_user(verified=False)
-    admin_login = client.post(
-        "/api/admin/login",
-        json={"email": admin["user"]["email"], "password": admin["password"]},
-    )
-    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+    admin_headers = token_headers(admin["user"], admin_session=True)
 
     anonymous = client.get("/api/admin/users")
     forbidden = client.get("/api/admin/users", headers=student["headers"])
@@ -63,15 +60,11 @@ def test_admin_can_list_all_users_with_search_and_pagination(client, make_user):
     assert searched.json()["users"][0]["email"] == student["user"]["email"]
 
 
-def test_student_can_report_product_and_admin_can_review_it(client, make_user, make_item):
+def test_student_can_report_product_and_admin_can_review_it(client, make_user, make_item, token_headers):
     seller = make_user(verified=True)
     reporter = make_user(verified=True)
     admin = make_user(role="ADMIN", verified=True)
-    admin_login = client.post(
-        "/api/admin/login",
-        json={"email": admin["user"]["email"], "password": admin["password"]},
-    )
-    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+    admin_headers = token_headers(admin["user"], admin_session=True)
     item = make_item(seller=seller)["item"]
 
     submitted = client.post(
@@ -106,16 +99,12 @@ def test_student_can_report_product_and_admin_can_review_it(client, make_user, m
     assert any(notification["notification_type"] == "REPORT" for notification in admin_notifications)
 
 
-def test_admin_can_ban_and_unban_student_posting(client, make_user, make_item):
+def test_admin_can_ban_and_unban_student_posting(client, make_user, make_item, token_headers):
     admin = make_user(role="ADMIN", verified=True)
     target = make_user(verified=True)
     seller = make_user(verified=True)
     target_item = make_item(seller=target)["item"]
-    admin_login = client.post(
-        "/api/admin/login",
-        json={"email": admin["user"]["email"], "password": admin["password"]},
-    )
-    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+    admin_headers = token_headers(admin["user"], admin_session=True)
 
     search = client.get(
         f"/api/admin/users/search?q={target['user']['username']}",

@@ -2,9 +2,13 @@
 
 import asyncio
 import base64
+import contextvars
 import hashlib
 import hmac
+import json
+import logging
 import secrets
+import uuid
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -17,15 +21,25 @@ import requests
 from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from database import get_connection
+from auth_sessions import (
+    ACCESS_COOKIE,
+    REFRESH_COOKIE,
+    clear_session_cookies,
+    create_session,
+    create_token,
+    revoke_session,
+    rotate_session,
+    set_session_cookies,
+    validate_csrf,
+)
+from database import close_all_connections, get_connection
 from generate_report import generate_market_report
 from graph_schema import schema
 from llm_assistant import LLMAssistant
@@ -35,6 +49,49 @@ from verification_delivery import VerificationDeliveryError, send_verification_c
 app = FastAPI(title="Campus X Mart API", version="1.0.0")
 UPLOADS_DIR = Path(__file__).resolve().parent / "uploads"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+request_id_context = contextvars.ContextVar("request_id", default="-")
+request_logger = logging.getLogger("campusxmart.request")
+request_logger.setLevel(logging.INFO)
+if not request_logger.handlers:
+    request_handler = logging.StreamHandler()
+    request_handler.setFormatter(logging.Formatter("%(message)s"))
+    request_logger.addHandler(request_handler)
+request_logger.propagate = False
+
+
+@app.middleware("http")
+async def request_context(request: Request, call_next):
+    request_id = secrets.token_hex(12)
+    context_token = request_id_context.set(request_id)
+    response = None
+    try:
+        origin = request.headers.get("origin")
+        if (
+            request.method not in {"GET", "HEAD", "OPTIONS"}
+            and origin
+            and origin not in settings.cors_origins_list
+        ):
+            response = JSONResponse(status_code=403, content={"detail": "Request origin is not allowed."})
+        else:
+            response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        request_logger.info(
+            json.dumps(
+                {
+                    "request_id": request_id_context.get(),
+                    "method": request.method,
+                    "path": request.url.path,
+                    "status_code": response.status_code,
+                },
+                separators=(",", ":"),
+            )
+        )
+        return response
+    finally:
+        request_id_context.reset(context_token)
+
+
+app.add_event_handler("shutdown", close_all_connections)
 
 
 @app.get("/uploads/{filename:path}")
@@ -62,7 +119,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-security = HTTPBearer()
 PASSWORD_ITERATIONS = 600_000
 VERIFICATION_EXPIRY_MINUTES = 10
 RESEND_COOLDOWN_SECONDS = 60
@@ -365,15 +421,6 @@ def verify_password(password: str, stored_hash: str) -> bool:
         return False
 
 
-def create_token(user_id: int, username: str, admin_session: bool = False) -> str:
-    expires = datetime.now(timezone.utc) + timedelta(minutes=settings.JWT_EXPIRES_MINUTES)
-    return jwt.encode(
-        {"sub": str(user_id), "username": username, "admin_session": admin_session, "exp": expires},
-        settings.JWT_SECRET_KEY,
-        algorithm="HS256",
-    )
-
-
 def discard_verification_code(user_id: int, channel: str, code_hash: str) -> None:
     """Remove an undelivered OTP so it neither blocks resend nor can be guessed."""
     connection = get_connection()
@@ -545,13 +592,33 @@ def current_user_from_token(token: str) -> dict:
         claims = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=["HS256"])
     except jwt.PyJWTError as exc:
         raise HTTPException(status_code=401, detail="The authentication token is invalid or has expired.") from exc
+    session_id = claims.get("sid")
+    if session_id is not None:
+        try:
+            session_id = str(uuid.UUID(session_id))
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise HTTPException(status_code=401, detail="The authentication session is invalid.") from exc
     connection = get_connection()
     try:
         with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT user_id, username, full_name, email, phone, email_verified, phone_verified, role FROM users WHERE user_id = %s",
-                (int(claims["sub"]),),
-            )
+            if session_id is None:
+                cursor.execute(
+                    """SELECT user_id, username, full_name, email, phone,
+                              email_verified, phone_verified, role
+                       FROM users WHERE user_id = %s""",
+                    (int(claims["sub"]),),
+                )
+            else:
+                cursor.execute(
+                    """SELECT u.user_id, u.username, u.full_name, u.email, u.phone,
+                              u.email_verified, u.phone_verified, u.role
+                       FROM users u
+                       JOIN user_sessions s ON s.user_id = u.user_id
+                       WHERE u.user_id = %s AND s.session_id = %s
+                         AND s.revoked_at IS NULL
+                         AND s.expires_at > CURRENT_TIMESTAMP""",
+                    (int(claims["sub"]), session_id),
+                )
             row = cursor.fetchone()
     finally:
         connection.close()
@@ -564,26 +631,14 @@ def current_user_from_token(token: str) -> dict:
 
 def get_current_user(request: Request):
     auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
+    if auth_header.startswith("Bearer "):
+        return current_user_from_token(auth_header.split(" ", 1)[1])
+    session_token = request.cookies.get(ACCESS_COOKIE)
+    if not session_token:
         raise HTTPException(status_code=401, detail="Authentication required.")
-    return current_user_from_token(auth_header.split(" ", 1)[1])
-
-
-def current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    try:
-        claims = jwt.decode(credentials.credentials, settings.JWT_SECRET_KEY, algorithms=["HS256"])
-    except jwt.PyJWTError:
-        raise HTTPException(status_code=401, detail="The authentication token is invalid or has expired.")
-    connection = get_connection()
-    try:
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT user_id, username, full_name, email, phone, email_verified, phone_verified FROM users WHERE user_id = %s", (claims["sub"],))
-            row = cursor.fetchone()
-    finally:
-        connection.close()
-    if not row:
-        raise HTTPException(status_code=401, detail="User not found.")
-    return serialize_user(row)
+    if request.method not in {"GET", "HEAD", "OPTIONS"}:
+        validate_csrf(request)
+    return current_user_from_token(session_token)
 
 
 def require_admin(current_user: dict = Depends(get_current_user)):
@@ -629,7 +684,7 @@ def register_user(request: Request, payload: RegistrationRequest):
         raise HTTPException(status_code=409, detail="The email, phone number, or username is already in use.")
     finally:
         connection.close()
-    return {"user": serialize_user(user), "access_token": create_token(user[0], user[1]), "token_type": "bearer"}
+    return {"user": serialize_user(user)}
 
 
 def create_verification_code_for_user(user_id: int, channel: str, destination: str) -> str:
@@ -766,6 +821,11 @@ def health_check():
     return {"message": "Campus X Mart API is running"}
 
 
+@app.get("/healthz", include_in_schema=False)
+def liveness_check():
+    return {"status": "ok"}
+
+
 @app.post("/api/locations")
 def create_location(payload: LocationCreateRequest, user: dict = Depends(get_current_user)):
     connection = get_connection()
@@ -845,9 +905,12 @@ async def upload_image(request: Request, file: UploadFile = File(...), user: dic
 
     if settings.APP_ENV != "prod":
         UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
-        filename = f"{secrets.token_hex(8)}_{file.filename or 'upload'}"
+        extension = {"image/jpeg": ".jpg", "image/jpg": ".jpg", "image/png": ".png", "image/webp": ".webp"}[
+            content_type
+        ]
+        filename = f"{secrets.token_hex(16)}{extension}"
         safe_path = UPLOADS_DIR / filename
-        safe_path.write_bytes(content)
+        await run_in_threadpool(safe_path.write_bytes, content)
         return {"storage": "local", "secure_url": f"http://localhost:8000/uploads/{filename}"}
 
     if not settings.CLOUDINARY_CLOUD_NAME or not settings.CLOUDINARY_API_KEY or not settings.CLOUDINARY_API_SECRET:
@@ -859,7 +922,8 @@ async def upload_image(request: Request, file: UploadFile = File(...), user: dic
         "timestamp": timestamp,
         "signature": hashlib.sha1(f"timestamp={timestamp}{settings.CLOUDINARY_API_SECRET}".encode()).hexdigest(),
     }
-    response = requests.post(
+    response = await run_in_threadpool(
+        requests.post,
         f"https://api.cloudinary.com/v1_1/{settings.CLOUDINARY_CLOUD_NAME}/image/upload",
         data=data,
         files={"file": (file.filename or "upload", content, content_type)},
@@ -963,20 +1027,79 @@ def check_username(username: str = ""):
 
 @app.post("/api/auth/register", status_code=status.HTTP_201_CREATED)
 @limiter.limit("5/minute")
-def register_route(request: Request, payload: RegistrationRequest):
-    return register_user(request, payload)
+def register_route(request: Request, response: Response, payload: RegistrationRequest):
+    result = register_user(request, payload)
+    return create_auth_response(response, result["user"])
 
 
 @app.post("/api/auth/login")
 @limiter.limit("5/minute")
-def login_route(request: Request, payload: LoginRequest):
-    return authenticate_login(payload)
+def login_route(request: Request, response: Response, payload: LoginRequest):
+    result = authenticate_login(payload)
+    return create_auth_response(response, result["user"])
 
 
 @app.post("/api/admin/login")
 @limiter.limit("5/minute")
-def admin_login_route(request: Request, payload: LoginRequest):
-    return authenticate_login(payload, admin_session=True)
+def admin_login_route(request: Request, response: Response, payload: LoginRequest):
+    result = authenticate_login(payload, admin_session=True)
+    return create_auth_response(response, result["user"])
+
+
+@app.post("/api/auth/token")
+@limiter.limit("5/minute")
+def api_token_route(request: Request, payload: LoginRequest):
+    user = authenticate_login(payload)["user"]
+    return {
+        "access_token": create_token(user["id"], user["username"]),
+        "token_type": "bearer",
+    }
+
+
+@app.post("/api/admin/token")
+@limiter.limit("5/minute")
+def admin_api_token_route(request: Request, payload: LoginRequest):
+    user = authenticate_login(payload, admin_session=True)["user"]
+    return {
+        "access_token": create_token(user["id"], user["username"], admin_session=True),
+        "token_type": "bearer",
+    }
+
+
+def create_auth_response(response: Response, user: dict):
+    access_token, refresh_token = create_session(
+        user["id"],
+        user["username"],
+        admin_session=user.get("admin_session", False),
+    )
+    set_session_cookies(response, access_token, refresh_token)
+    return {"user": user, "token_type": "cookie"}
+
+
+@app.post("/api/auth/refresh")
+@limiter.limit("10/minute")
+def refresh_auth_session(request: Request, response: Response):
+    validate_csrf(request)
+    tokens = rotate_session(request.cookies.get(REFRESH_COOKIE))
+    if tokens is None:
+        clear_session_cookies(response)
+        response.status_code = status.HTTP_401_UNAUTHORIZED
+        return {"detail": "The session has expired. Please sign in again."}
+    set_session_cookies(response, *tokens)
+    return {"message": "Session refreshed."}
+
+
+@app.post("/api/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout_auth_session(request: Request, response: Response):
+    if request.cookies.get(ACCESS_COOKIE) or request.cookies.get(REFRESH_COOKIE):
+        validate_csrf(request)
+    revoke_session(
+        request.cookies.get(REFRESH_COOKIE),
+        request.cookies.get(ACCESS_COOKIE),
+    )
+    clear_session_cookies(response)
+    response.status_code = status.HTTP_204_NO_CONTENT
+    return response
 
 
 def authenticate_login(payload: LoginRequest, admin_session: bool = False):
@@ -993,11 +1116,7 @@ def authenticate_login(payload: LoginRequest, admin_session: bool = False):
         raise HTTPException(status_code=403, detail="Admin access required.")
     user = serialize_user(row)
     user["admin_session"] = admin_session
-    return {
-        "user": user,
-        "access_token": create_token(row[0], row[1], admin_session=admin_session),
-        "token_type": "bearer",
-    }
+    return {"user": user}
 
 
 @app.post("/api/auth/send-verification", status_code=status.HTTP_202_ACCEPTED)
@@ -1082,15 +1201,7 @@ async def upload_listing_media(item_id: int, file: UploadFile = File(...), user:
         if not valid_video:
             raise HTTPException(status_code=415, detail="The uploaded file does not match its video format.")
 
-    connection = get_connection()
-    try:
-        with connection.cursor() as cursor:
-            require_posting_allowed(cursor, user["id"])
-            cursor.execute("SELECT 1 FROM items WHERE item_id = %s AND seller_id = %s", (item_id, user["id"]))
-            if not cursor.fetchone():
-                raise HTTPException(status_code=404, detail="Listing not found or you do not have permission to upload media.")
-    finally:
-        connection.close()
+    await run_in_threadpool(check_listing_media_access, item_id, user["id"])
 
     if not settings.CLOUDINARY_CLOUD_NAME or (not settings.CLOUDINARY_API_SECRET and not settings.CLOUDINARY_UPLOAD_PRESET):
         raise HTTPException(status_code=503, detail="Cloud storage is not configured. Add Cloudinary credentials to backend/.env.")
@@ -1110,21 +1221,62 @@ async def upload_listing_media(item_id: int, file: UploadFile = File(...), user:
         }
         if settings.CLOUDINARY_UPLOAD_PRESET:
             options["upload_preset"] = settings.CLOUDINARY_UPLOAD_PRESET
-        uploaded = cloudinary.uploader.upload(content, **options)
+        uploaded = await run_in_threadpool(cloudinary.uploader.upload, content, **options)
     except Exception as error:
         raise HTTPException(status_code=502, detail="Cloud upload failed. Please try again.") from error
 
     media_type = "IMAGE" if is_image else "VIDEO" if is_video else "FILE"
+    return await run_in_threadpool(
+        save_listing_media,
+        item_id,
+        user["id"],
+        media_type,
+        file.filename,
+        uploaded,
+    )
+
+
+def check_listing_media_access(item_id: int, user_id: int) -> None:
     connection = get_connection()
     try:
         with connection.cursor() as cursor:
+            require_posting_allowed(cursor, user_id)
+            cursor.execute(
+                "SELECT 1 FROM items WHERE item_id = %s AND seller_id = %s",
+                (item_id, user_id),
+            )
+            if cursor.fetchone() is None:
+                raise HTTPException(status_code=404, detail="Listing not found or you do not have permission to upload media.")
+    finally:
+        connection.close()
+
+
+def save_listing_media(
+    item_id: int,
+    user_id: int,
+    media_type: str,
+    filename: Optional[str],
+    uploaded: dict,
+) -> dict:
+    connection = get_connection()
+    try:
+        with connection.cursor() as cursor:
+            require_posting_allowed(cursor, user_id)
+            cursor.execute(
+                "SELECT item_id FROM items WHERE item_id = %s AND seller_id = %s FOR UPDATE",
+                (item_id, user_id),
+            )
+            if cursor.fetchone() is None:
+                raise HTTPException(status_code=404, detail="Listing not found or you do not have permission to upload media.")
             cursor.execute("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM item_media WHERE item_id = %s", (item_id,))
             sort_order = cursor.fetchone()[0]
+            if sort_order > 32767:
+                raise HTTPException(status_code=409, detail="This listing has reached its media limit.")
             cursor.execute(
                 """INSERT INTO item_media (item_id, media_type, storage_provider, media_url, public_id, original_filename, sort_order)
                    VALUES (%s, %s, 'CLOUDINARY', %s, %s, %s, %s)
                    RETURNING media_id, media_url, media_type, original_filename""",
-                (item_id, media_type, uploaded["secure_url"], uploaded.get("public_id"), file.filename, sort_order),
+                (item_id, media_type, uploaded["secure_url"], uploaded.get("public_id"), filename, sort_order),
             )
             media = cursor.fetchone()
         connection.commit()
@@ -1701,26 +1853,43 @@ def list_messages(
 
 @app.post("/api/messages/{user_id}", status_code=status.HTTP_201_CREATED)
 async def send_message(user_id: int, payload: MessageCreateRequest, user: dict = Depends(get_current_user)):
+    message_payload = await run_in_threadpool(
+        persist_message,
+        user["id"],
+        user["full_name"],
+        user_id,
+        payload.message_text,
+    )
+    await broadcast_chat_message(message_payload)
+    return {"message": message_payload}
+
+
+def persist_message(sender_id: int, sender_name: str, receiver_id: int, message_text: str) -> dict:
     connection = get_connection()
     row = None
     try:
         with connection.cursor() as cursor:
-            require_message_recipient(cursor, user["id"], user_id)
+            require_message_recipient(cursor, sender_id, receiver_id)
             cursor.execute(
                 """INSERT INTO messages (sender_id, receiver_id, message_text)
                    VALUES (%s, %s, %s)
                    RETURNING message_id, sender_id, receiver_id, message_text, is_read, sent_at""",
-                (user["id"], user_id, payload.message_text),
+                (sender_id, receiver_id, message_text),
             )
             row = cursor.fetchone()
-            insert_notification(cursor, user_id, "MESSAGE", "New message", f"{user['full_name']} sent you a message.", "/messages")
+            insert_notification(
+                cursor,
+                receiver_id,
+                "MESSAGE",
+                "New message",
+                f"{sender_name} sent you a message.",
+                "/messages",
+            )
         connection.commit()
     finally:
         connection.close()
 
-    message_payload = serialize_message(row)
-    await broadcast_chat_message(message_payload)
-    return {"message": message_payload}
+    return serialize_message(row)
 
 
 @app.delete("/api/messages/{user_id}/{message_id}")

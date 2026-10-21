@@ -62,15 +62,11 @@ def test_order_requests_create_seller_notification(client, make_user, make_item)
     assert inbox.json()["unread_count"] == 1
 
 
-def test_admins_receive_notifications_for_order_transactions(client, make_user, make_item):
+def test_admins_receive_notifications_for_order_transactions(client, make_user, make_item, token_headers):
     seller = make_user(verified=True)
     buyer = make_user(verified=True)
     admin = make_user(role="ADMIN", verified=True)
-    admin_login = client.post(
-        "/api/admin/login",
-        json={"email": admin["user"]["email"], "password": admin["password"]},
-    )
-    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+    admin_headers = token_headers(admin["user"], admin_session=True)
     item = make_item(seller=seller)["item"]
 
     requested = client.post(f"/api/items/{item['item_id']}/orders", headers=buyer["headers"])
@@ -100,13 +96,9 @@ def test_admins_receive_notifications_for_order_transactions(client, make_user, 
     }
 
 
-def test_new_registration_notifies_admin_in_app_and_over_websocket(client, make_user):
+def test_new_registration_notifies_admin_in_app_and_over_websocket(client, make_user, token_headers):
     admin = make_user(role="ADMIN", verified=True)
-    admin_login = client.post(
-        "/api/admin/login",
-        json={"email": admin["user"]["email"], "password": admin["password"]},
-    )
-    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+    admin_headers = token_headers(admin["user"], admin_session=True)
     ticket_response = client.post("/api/ws/ticket", headers=admin_headers)
     assert ticket_response.status_code == 200, ticket_response.text
 

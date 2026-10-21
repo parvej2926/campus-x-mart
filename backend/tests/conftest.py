@@ -23,7 +23,7 @@ os.environ.setdefault("JWT_SECRET_KEY", "testing-secret-key-1234567890-abcdef")
 os.environ.setdefault("JWT_EXPIRES_MINUTES", "60")
 os.environ.setdefault("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
 
-from main import app, limiter, get_connection
+from main import app, create_token, limiter, get_connection
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -41,8 +41,9 @@ def rebuild_test_database():
 
 
 @pytest.fixture(autouse=True)
-def truncate_test_database(rebuild_test_database):
+def truncate_test_database(rebuild_test_database, client):
     limiter.reset()
+    client.cookies.clear()
     connection = psycopg2.connect(TEST_DATABASE_URL)
     try:
         with connection.cursor() as cursor:
@@ -56,6 +57,7 @@ def truncate_test_database(rebuild_test_database):
     finally:
         connection.close()
         limiter.reset()
+        client.cookies.clear()
 
 
 @pytest.fixture(scope="session")
@@ -96,16 +98,25 @@ def make_user(client):
                 connection.commit()
             finally:
                 connection.close()
-        login = client.post(
-            "/api/auth/login",
-            json={"email": email, "password": password},
-        )
-        assert login.status_code == 200, login.text
+        headers = {
+            "Authorization": (
+                f"Bearer {create_token(user['user_id'], user['username'], admin_session=role == 'ADMIN')}"
+            )
+        }
         return {
             "user": user,
-            "headers": {"Authorization": f"Bearer {login.json()['access_token']}"},
+            "headers": headers,
             "password": password,
         }
+
+    return _make
+
+
+@pytest.fixture
+def token_headers():
+    def _make(user, admin_session: bool = False):
+        token = create_token(user["user_id"], user["username"], admin_session=admin_session)
+        return {"Authorization": f"Bearer {token}"}
 
     return _make
 

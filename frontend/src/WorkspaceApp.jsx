@@ -1,5 +1,6 @@
 import { cloneElement, isValidElement, useEffect, useRef, useState } from "react";
 import heroImage from "./assets/hero.png";
+import { API, api, apiFetch } from "./api.js";
 import { suggestCategory } from "./categorySuggestion.js";
 import { mergeCommentList } from "./commentUtils.js";
 import { buildLocationQuery, googleMapsEmbedUrl, googleMapsSearchUrl } from "./locationUtils.js";
@@ -7,7 +8,6 @@ import { translate, translateNotification } from "./translations.js";
 import { youtubeEmbedUrl } from "./youtube.js";
 import "./Workspace.css";
 
-const API = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 const PRODUCT_PAGE_SIZE = 12;
 const blankListing = {
   name: "",
@@ -61,22 +61,6 @@ function Localized({ language, children }) {
   }
 
   return visit(children);
-}
-
-async function api(path, method = "GET", body) {
-  const token = localStorage.getItem("access_token");
-  const response = await fetch(`${API}${path}`, {
-    method,
-    headers: {
-      ...(body ? { "Content-Type": "application/json" } : {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    ...(body ? { body: JSON.stringify(body) } : {}),
-  });
-  if (response.status === 204) return {};
-  const payload = await response.json();
-  if (!response.ok) throw new Error(payload.detail || "The request could not be completed.");
-  return payload;
 }
 
 function moveTo(path, setPath) {
@@ -308,7 +292,7 @@ export default function WorkspaceApp() {
   const [language, setLanguage] = useState(() => localStorage.getItem("campus_x_mart_language") === "bn" ? "bn" : "en");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [user, setUser] = useState(null);
-  const [authReady, setAuthReady] = useState(() => !localStorage.getItem("access_token"));
+  const [authReady, setAuthReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [items, setItems] = useState([]);
@@ -419,10 +403,9 @@ export default function WorkspaceApp() {
   }, [mobileMenuOpen]);
 
   useEffect(() => {
-    if (!localStorage.getItem("access_token")) return;
     api("/api/auth/me")
       .then((result) => setUser(result.user))
-      .catch(() => localStorage.removeItem("access_token"))
+      .catch(() => setUser(null))
       .finally(() => setAuthReady(true));
   }, []);
 
@@ -734,7 +717,6 @@ export default function WorkspaceApp() {
       if (isAdminLogin && (result.user.role !== "ADMIN" || result.user.admin_session !== true)) {
         throw new Error("This account does not have administrator access.");
       }
-      localStorage.setItem("access_token", result.access_token);
       setUser(result.user);
       navigate(isAdminLogin ? "/admin/moderation" : "/");
     } catch (error) {
@@ -752,9 +734,8 @@ export default function WorkspaceApp() {
   async function uploadListingMediaFile(itemId, file) {
     const formData = new FormData();
     formData.append("file", file);
-    const response = await fetch(`${API}/api/listings/${itemId}/media`, {
+    const response = await apiFetch(`/api/listings/${itemId}/media`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${localStorage.getItem("access_token")}` },
       body: formData,
     });
     const result = await response.json();
@@ -1137,9 +1118,8 @@ export default function WorkspaceApp() {
     const formData = new FormData();
     formData.append("file", file);
     try {
-      const response = await fetch(`${API}/api/listings/${itemId}/media`, {
+      const response = await apiFetch(`/api/listings/${itemId}/media`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${localStorage.getItem("access_token")}` },
         body: formData,
       });
       const result = await response.json();
@@ -1179,11 +1159,16 @@ export default function WorkspaceApp() {
     }
   }
 
-  function logout() {
-    localStorage.removeItem("access_token");
-    setUser(null);
-    setItems([]);
-    navigate("/");
+  async function logout() {
+    try {
+      await api("/api/auth/logout", "POST");
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      setUser(null);
+      setItems([]);
+      navigate("/");
+    }
   }
 
   if (!authReady) return <Localized language={language}><main className="loading-screen"><span className="loading-mark">cXm</span><p>Opening your campus market…</p></main></Localized>;

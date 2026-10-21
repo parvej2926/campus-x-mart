@@ -1,19 +1,16 @@
 # Campus X Mart
 
-A campus marketplace application built with React and FastAPI.
+A campus marketplace application built with React, FastAPI, and PostgreSQL.
 
 ## Features
 
-- User authentication with JWT
+- JWT-backed, revocable browser sessions using httpOnly cookies and CSRF protection
 - Email and phone verification with expiring six-digit codes
-- Item listing and browsing
-- Product filtering and pagination
-- Real-time comments and chat
-- Rating and reactions
-- Google Maps and video embeds
-- Upload support with Cloudinary fallback
-- Local Ollama marketplace assistant (no API key required; OpenAI is optional)
-- Docker support and CI workflow for automation
+- Marketplace listings, filtering, pagination, and media uploads
+- Orders, reviews, reactions, comments, and private messaging
+- One-time WebSocket tickets, notifications, and admin moderation
+- Local Ollama marketplace assistant (OpenAI is optional)
+- Docker image and GitHub Actions checks
 
 ## Run locally
 
@@ -25,9 +22,27 @@ python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt -r requirements-dev.txt
 cp .env.example .env
-# fill in DATABASE_URL and JWT_SECRET_KEY before starting the app
-# For local verification testing, set EXPOSE_DEV_OTP=true in backend/.env; dev mode does not send real email or SMS.
-# install Ollama and run `ollama pull mistral:latest` if the model is not already available
+# Set DATABASE_URL and a private JWT_SECRET_KEY in backend/.env.
+# For local verification, set EXPOSE_DEV_OTP=true; development does not send real email or SMS.
+```
+
+Initialize a new PostgreSQL database once, then apply tracked migrations whenever upgrading:
+
+```bash
+psql "$DATABASE_URL" -f ../database/schema.sql
+python -m migrate
+```
+
+Ensure `DATABASE_URL` is exported to the shell running `psql`; keep its value private.
+Existing databases should run `python -m migrate` without reloading `schema.sql`. The
+migration runner records file checksums and rejects edits to migrations that have
+already been applied. Do not run `schema.sql` against an existing database; it is a
+fresh-database bootstrap file.
+
+Start the API:
+
+```bash
+# Optional local assistant: install Ollama and run `ollama pull mistral:latest`.
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
@@ -35,29 +50,41 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
-## Deployment notes
+Run frontend checks with `npm run lint`, `npm test`, and `npm run build`.
 
-- Docker image is defined in the repository root `Dockerfile`.
-- GitHub Action workflow runs lint/build checks in `.github/workflows/ci.yml`.
-- `render.yaml` defines a Render Blueprint for the frontend, API, and PostgreSQL database.
-- To deploy, push this repository to GitHub, create a Render Blueprint from the repository, and apply the Blueprint. Render generates `JWT_SECRET_KEY` and connects the database automatically.
-- Initialize the newly provisioned, empty database once from the repository root with `psql "$DATABASE_URL" -f database/schema.sql`. Set `DATABASE_URL` securely in your local environment first; do not paste it into source files or commit it. This is a one-time operation, not a command to rerun on an existing database.
+## Sessions and deployment
+
+- Browser sign-in returns user data, not bearer tokens. The API sets a short-lived
+  httpOnly access cookie and a rotating, httpOnly refresh cookie; unsafe cookie-auth
+  requests require the readable CSRF cookie echoed in `X-CSRF-Token`.
+- Non-browser clients can request a short-lived bearer token from `/api/auth/token`
+  (or `/api/admin/token` for administrator sessions) over HTTPS. These tokens are
+  accepted by protected API routes and are not refreshable.
+- Configure `CORS_ORIGINS` with the exact frontend origins. Production cookies require
+  HTTPS and use `SameSite=None; Secure` to support a separate frontend origin.
+- The container runs as a non-root user and has a `/healthz` liveness check. Apply
+  database migrations as a deployment step before starting a new API release.
+- `render.yaml` defines a Render Blueprint for the frontend, API, and PostgreSQL
+  database. Render generates `JWT_SECRET_KEY` and connects the database automatically.
+- Configure Cloudinary for persistent hosted uploads. The local upload directory is
+  not durable on hosted instances.
 - For Render Free email delivery, set `EMAIL_PROVIDER=resend`, `RESEND_API_KEY`, and
-    `RESEND_FROM_EMAIL` on the API service. Verify the sender domain with Resend first;
-    its API sends over HTTPS, which works with Render Free. SMTP remains available on
-    hosts that permit outbound SMTP. For phone codes, configure `TWILIO_ACCOUNT_SID`,
-    `TWILIO_AUTH_TOKEN`, and `TWILIO_FROM_PHONE`. Codes expire after 10 minutes, allow
-    five attempts, and can be resent after 60 seconds.
-- Configure Cloudinary for persistent uploads. The local upload directory is not durable on hosted instances.
-- The free Render database and web service have provider-defined usage and lifecycle limits. Review the current limits in Render before using this setup for real users or important data.
-- The default local Ollama configuration is not available on Render. Configure a reachable LLM provider before enabling the assistant in production.
+  `RESEND_FROM_EMAIL`. Verify the sender domain with Resend first. For phone codes,
+  configure `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_FROM_PHONE`.
+- The default local Ollama configuration is not available on Render. Configure a
+  reachable LLM provider before enabling the assistant in production.
+- Public registration creates student accounts only. Provision administrators through
+  a trusted operator workflow; never expose database credentials or promote accounts
+  through a public endpoint.
+- Review Render's current database and service limits before using the free tier with
+  important or production user data.
 
 ## Copyright
 
-Copyright (c) 2026 Campus X Mart. All rights reserved for original project materials owned by Campus X Mart. Third-party dependencies and materials remain subject to their respective licenses. See [LICENSE](LICENSE).
-- For Render Free email delivery, configure Resend as described above. For phone
-    codes, configure `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_FROM_PHONE`.
+Copyright (c) 2026 Campus X Mart. All rights reserved for original project materials
+owned by Campus X Mart. Third-party dependencies and materials remain subject to
+their respective licenses. See [LICENSE](LICENSE).
