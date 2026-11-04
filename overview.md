@@ -9,7 +9,7 @@ The application is composed of:
 - A **React 19 + Vite** single-page frontend in `frontend/`.
 - A **FastAPI** backend in `backend/`, with PostgreSQL access through psycopg2.
 - A canonical PostgreSQL schema and SQL migrations in `database/`.
-- Render deployment configuration in `render.yaml` and a backend Docker image definition in `Dockerfile`.
+- Local development configuration in `backend/.env.example` and an optional backend Docker image definition in `Dockerfile`.
 
 The main browser UI is the shared application in `frontend/src/WorkspaceApp.jsx`; the API routes and much of the service logic currently live together in `backend/main.py`.
 
@@ -29,14 +29,13 @@ The main browser UI is the shared application in `frontend/src/WorkspaceApp.jsx`
 
 | File | What it contains |
 |---|---|
-| [`README.md`](README.md) | Project features, local startup steps, and deployment/database setup notes. |
+| [`README.md`](README.md) | Project features and local startup steps. |
 | [`overview.md`](overview.md) | This repository and file-navigation guide. |
 | [`PROJECT_CHECKLIST.md`](PROJECT_CHECKLIST.md) | Current implementation inventory, security actions, known gaps, and verification status. |
 | [`ERD.md`](ERD.md) | Human-readable summary of core database entities and relationships. |
 | [`feaures.md`](feaures.md) | Original feature inventory; the filename is spelled `feaures.md` in the repository. |
 | [`tools.md`](tools.md) | Short project technology/tool inventory. |
 | [`Dockerfile`](Dockerfile) | Builds and starts the Python/FastAPI API container. |
-| [`render.yaml`](render.yaml) | Render Blueprint for the API service, static frontend, and PostgreSQL database. |
 | [`.gitignore`](.gitignore) | Excludes local environments, secrets files, generated frontend output, uploads, and other local artifacts. |
 | [`LICENSE`](LICENSE) | Project copyright and third-party materials notice. |
 

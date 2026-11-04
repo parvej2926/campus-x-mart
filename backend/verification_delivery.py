@@ -23,26 +23,28 @@ def configure_sms_sender(sender: SmsVerificationSender) -> None:
     _sms_sender = sender
 
 
-def send_verification_code(channel: str, destination: str, code: str) -> None:
+def send_verification_code(channel: str, destination: str, code: str) -> bool:
     normalized_channel = channel.upper()
     if normalized_channel == "PHONE":
         if _sms_sender is not None:
             _sms_sender.send(destination, code)
-            return
-        if settings.APP_ENV == "dev":
-            return
+            return True
+        if settings.APP_ENV == "dev" and not all(
+            (settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN, settings.TWILIO_FROM_PHONE)
+        ):
+            return False
         _send_twilio_sms(destination, code)
-        return
+        return True
 
     if normalized_channel != "EMAIL":
         raise VerificationDeliveryError("Unsupported verification channel.")
 
-    if settings.APP_ENV == "dev":
-        return
-
     if settings.EMAIL_PROVIDER == "resend":
         _send_resend_email(destination, code)
-        return
+        return True
+
+    if settings.APP_ENV == "dev":
+        return False
 
     if not settings.SMTP_HOST or not settings.SMTP_FROM_EMAIL:
         raise VerificationDeliveryError("Email verification delivery is not configured.")
@@ -65,6 +67,7 @@ def send_verification_code(channel: str, destination: str, code: str) -> None:
             client.send_message(message)
     except (OSError, smtplib.SMTPException) as exc:
         raise VerificationDeliveryError("Email verification delivery failed.") from exc
+    return True
 
 
 def _send_resend_email(destination: str, code: str) -> None:

@@ -121,4 +121,21 @@ def test_dev_verification_response_matches_delivery_mode(client, make_user, monk
         assert response.json()["dev_code"].isdigit()
     else:
         assert "dev_code" not in response.json()
-        assert "does not send real codes" in response.json()["message"]
+        assert "did not send a real code" in response.json()["message"]
+
+
+def test_dev_verification_does_not_expose_code_after_sms_delivery(client, make_user, monkeypatch):
+    user = make_user()
+    monkeypatch.setattr(settings, "APP_ENV", "dev")
+    monkeypatch.setattr(settings, "EXPOSE_DEV_OTP", True)
+    monkeypatch.setattr("main.send_verification_code", lambda *args: True)
+
+    response = client.post(
+        "/api/auth/send-verification",
+        headers=user["headers"],
+        json={"channel": "PHONE"},
+    )
+
+    assert response.status_code == 202, response.text
+    assert "dev_code" not in response.json()
+    assert response.json()["message"] == "A verification code was sent to your phone."

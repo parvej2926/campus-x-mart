@@ -13,6 +13,7 @@ def test_migrations_upgrade_legacy_objects_and_are_idempotent(make_user, make_it
         with connection.cursor() as cursor:
             cursor.execute("DROP INDEX IF EXISTS idx_item_media_item_sort_order")
             cursor.execute("ALTER TABLE user_sessions DROP COLUMN IF EXISTS admin_session")
+            cursor.execute("ALTER TABLE users DROP COLUMN IF EXISTS profile_image_url")
             cursor.execute("DROP TABLE IF EXISTS schema_migrations")
             cursor.execute(
                 """INSERT INTO item_media
@@ -35,6 +36,7 @@ def test_migrations_upgrade_legacy_objects_and_are_idempotent(make_user, make_it
         "005_message_visibility.sql",
         "006_item_media_order_unique.sql",
         "007_user_session_admin.sql",
+        "008_profile_image_url.sql",
     ]
     assert apply_migrations() == []
 
@@ -48,7 +50,7 @@ def test_migrations_upgrade_legacy_objects_and_are_idempotent(make_user, make_it
             )
             assert cursor.fetchall() == [("first.jpg", 0), ("second.jpg", 1)]
             cursor.execute("SELECT COUNT(*) FROM schema_migrations")
-            assert cursor.fetchone()[0] == 7
+            assert cursor.fetchone()[0] == 8
             with pytest.raises(psycopg2.IntegrityError):
                 cursor.execute(
                     """INSERT INTO item_media

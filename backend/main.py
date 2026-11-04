@@ -453,6 +453,7 @@ def serialize_user(row) -> dict:
         "email_verified": row[5] if len(row) > 5 else False,
         "phone_verified": row[6] if len(row) > 6 else False,
         "role": row[7] if len(row) > 7 else "STUDENT",
+        "profile_image_url": row[8] if len(row) > 8 else None,
     }
 
 
@@ -604,14 +605,14 @@ def current_user_from_token(token: str) -> dict:
             if session_id is None:
                 cursor.execute(
                     """SELECT user_id, username, full_name, email, phone,
-                              email_verified, phone_verified, role
+                              email_verified, phone_verified, role, profile_image_url
                        FROM users WHERE user_id = %s""",
                     (int(claims["sub"]),),
                 )
             else:
                 cursor.execute(
                     """SELECT u.user_id, u.username, u.full_name, u.email, u.phone,
-                              u.email_verified, u.phone_verified, u.role
+                              u.email_verified, u.phone_verified, u.role, u.profile_image_url
                        FROM users u
                        JOIN user_sessions s ON s.user_id = u.user_id
                        WHERE u.user_id = %s AND s.session_id = %s
@@ -672,7 +673,8 @@ def register_user(request: Request, payload: RegistrationRequest):
             cursor.execute(
                 """INSERT INTO users (username, full_name, email, phone, password_hash)
                    VALUES (%s, %s, %s, %s, %s)
-                   RETURNING user_id, username, full_name, email, phone, email_verified, phone_verified""",
+                   RETURNING user_id, username, full_name, email, phone,
+                             email_verified, phone_verified, role, profile_image_url""",
                 (payload.username, payload.full_name.strip(), payload.email, payload.phone, hash_password(payload.password)),
             )
             user = cursor.fetchone()
@@ -766,15 +768,14 @@ def send_verification(request: Request, payload: VerificationSendRequest, user: 
         connection.close()
 
     try:
-        send_verification_code(payload.channel, destination, code)
+        delivered = send_verification_code(payload.channel, destination, code)
     except VerificationDeliveryError as error:
-        if settings.APP_ENV != "dev":
-            discard_verification_code(user["id"], payload.channel, code_hash)
-            raise HTTPException(status_code=503, detail="The verification code could not be delivered. Check your delivery settings and try again.") from error
-    if settings.APP_ENV == "dev":
+        discard_verification_code(user["id"], payload.channel, code_hash)
+        raise HTTPException(status_code=503, detail="The verification code could not be delivered. Check your delivery settings and try again.") from error
+    if settings.APP_ENV == "dev" and not delivered:
         if settings.EXPOSE_DEV_OTP:
             return {"message": "Development code generated. It expires in 10 minutes.", "dev_code": code, "expires_in_seconds": VERIFICATION_EXPIRY_MINUTES * 60, "resend_after_seconds": RESEND_COOLDOWN_SECONDS}
-        return {"message": "Development mode does not send real codes. Set EXPOSE_DEV_OTP=true in backend/.env to show the development code.", "expires_in_seconds": VERIFICATION_EXPIRY_MINUTES * 60, "resend_after_seconds": RESEND_COOLDOWN_SECONDS}
+        return {"message": "Development mode did not send a real code. Configure Twilio to send an SMS, or set EXPOSE_DEV_OTP=true in backend/.env to show a demo code.", "expires_in_seconds": VERIFICATION_EXPIRY_MINUTES * 60, "resend_after_seconds": RESEND_COOLDOWN_SECONDS}
     return {"message": f"A verification code was sent to your {payload.channel.lower()}.", "expires_in_seconds": VERIFICATION_EXPIRY_MINUTES * 60, "resend_after_seconds": RESEND_COOLDOWN_SECONDS}
 
 
@@ -888,21 +889,18 @@ def assistant_chat(request: Request, payload: AssistantChatRequest, user: dict =
         raise HTTPException(status_code=502, detail="The marketplace assistant is temporarily unavailable. Please try again.") from error
 
 
-@app.post("/api/upload/image")
-@limiter.limit("5/minute")
-async def upload_image(request: Request, file: UploadFile = File(...), user: dict = Depends(get_current_user)):
-    content = await file.read()
+def validate_image_upload(content: bytes, content_type: str) -> None:
     if not content:
         raise HTTPException(status_code=400, detail="The selected file is empty.")
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="Files must be 5 MB or smaller.")
     if not _valid_image_signature(content):
         raise HTTPException(status_code=415, detail="The uploaded file is not a valid image.")
-
-    content_type = (file.content_type or "application/octet-stream").lower()
     if content_type not in {"image/jpeg", "image/jpg", "image/png", "image/webp"}:
         raise HTTPException(status_code=415, detail="Only JPEG, PNG, and WEBP images are supported.")
 
+
+async def store_image_upload(content: bytes, filename: str, content_type: str) -> dict:
     if settings.APP_ENV != "prod":
         UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
         extension = {"image/jpeg": ".jpg", "image/jpg": ".jpg", "image/png": ".png", "image/webp": ".webp"}[
@@ -922,17 +920,55 @@ async def upload_image(request: Request, file: UploadFile = File(...), user: dic
         "timestamp": timestamp,
         "signature": hashlib.sha1(f"timestamp={timestamp}{settings.CLOUDINARY_API_SECRET}".encode()).hexdigest(),
     }
-    response = await run_in_threadpool(
-        requests.post,
-        f"https://api.cloudinary.com/v1_1/{settings.CLOUDINARY_CLOUD_NAME}/image/upload",
-        data=data,
-        files={"file": (file.filename or "upload", content, content_type)},
-        timeout=30,
-    )
-    if not response.ok:
+    try:
+        response = await run_in_threadpool(
+            requests.post,
+            f"https://api.cloudinary.com/v1_1/{settings.CLOUDINARY_CLOUD_NAME}/image/upload",
+            data=data,
+            files={"file": (filename, content, content_type)},
+            timeout=30,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except (requests.RequestException, ValueError) as error:
+        raise HTTPException(status_code=502, detail="Cloud upload failed. Please try again.") from error
+    secure_url = payload.get("secure_url")
+    if not secure_url:
         raise HTTPException(status_code=502, detail="Cloud upload failed. Please try again.")
-    payload = response.json()
-    return {"storage": "cloudinary", "secure_url": payload.get("secure_url", "")}
+    return {"storage": "cloudinary", "secure_url": secure_url}
+
+
+@app.post("/api/upload/image")
+@limiter.limit("5/minute")
+async def upload_image(request: Request, file: UploadFile = File(...), user: dict = Depends(get_current_user)):
+    content = await file.read(MAX_UPLOAD_BYTES + 1)
+    content_type = (file.content_type or "application/octet-stream").lower()
+    validate_image_upload(content, content_type)
+    return await store_image_upload(content, file.filename or "upload", content_type)
+
+
+@app.post("/api/auth/profile-image")
+@limiter.limit("5/minute")
+async def update_profile_image(
+    request: Request,
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
+):
+    content = await file.read(MAX_UPLOAD_BYTES + 1)
+    content_type = (file.content_type or "application/octet-stream").lower()
+    validate_image_upload(content, content_type)
+    stored_image = await store_image_upload(content, file.filename or "profile-image", content_type)
+    connection = get_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE users SET profile_image_url = %s, updated_at = CURRENT_TIMESTAMP WHERE user_id = %s",
+                (stored_image["secure_url"], user["id"]),
+            )
+        connection.commit()
+    finally:
+        connection.close()
+    return {"profile_image_url": stored_image["secure_url"]}
 
 
 @app.post("/api/ws/ticket")
@@ -1106,11 +1142,11 @@ def authenticate_login(payload: LoginRequest, admin_session: bool = False):
     connection = get_connection()
     try:
         with connection.cursor() as cursor:
-            cursor.execute("SELECT user_id, username, full_name, email, phone, email_verified, phone_verified, role, password_hash FROM users WHERE email = %s", (payload.email,))
+            cursor.execute("SELECT user_id, username, full_name, email, phone, email_verified, phone_verified, role, profile_image_url, password_hash FROM users WHERE email = %s", (payload.email,))
             row = cursor.fetchone()
     finally:
         connection.close()
-    if not row or not verify_password(payload.password, row[8]):
+    if not row or not verify_password(payload.password, row[9]):
         raise HTTPException(status_code=401, detail="Incorrect email or password.")
     if admin_session and row[7] != "ADMIN":
         raise HTTPException(status_code=403, detail="Admin access required.")

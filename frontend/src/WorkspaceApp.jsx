@@ -352,6 +352,7 @@ export default function WorkspaceApp() {
   const [channel, setChannel] = useState("EMAIL");
   const [code, setCode] = useState("");
   const [resendIn, setResendIn] = useState(0);
+  const [profileImageBusy, setProfileImageBusy] = useState(false);
   const notificationIds = useRef(new Set());
   const selectedConversationRef = useRef(null);
   const assistantScrollRef = useRef(null);
@@ -1159,6 +1160,30 @@ export default function WorkspaceApp() {
     }
   }
 
+  async function uploadProfileImage(event) {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (!file) return;
+
+    setProfileImageBusy(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const response = await apiFetch("/api/auth/profile-image", {
+        method: "POST",
+        body: formData,
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || "Profile photo upload failed.");
+      setUser((current) => ({ ...current, profile_image_url: result.profile_image_url }));
+      setNotice("Profile photo updated.");
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      setProfileImageBusy(false);
+    }
+  }
+
   async function logout() {
     try {
       await api("/api/auth/logout", "POST");
@@ -1206,7 +1231,7 @@ export default function WorkspaceApp() {
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <div className="sidebar-user-mark">{user?.full_name?.slice(0, 1).toUpperCase() || "S"}</div>
+          <div className="sidebar-user-mark">{user?.profile_image_url ? <img src={user.profile_image_url} alt="" /> : user?.full_name?.slice(0, 1).toUpperCase() || "S"}</div>
           <div className="sidebar-user-copy"><strong>{user?.full_name || user?.username}</strong><span>{user?.email}</span></div>
           <button className="logout-button" onClick={logout} aria-label="Log out">↗</button>
         </div>
@@ -1228,7 +1253,7 @@ export default function WorkspaceApp() {
             ))}
           </nav>
           <div className="mobile-drawer-account">
-            <span className="sidebar-user-mark">{user?.full_name?.slice(0, 1).toUpperCase() || "S"}</span>
+            <span className="sidebar-user-mark">{user?.profile_image_url ? <img src={user.profile_image_url} alt="" /> : user?.full_name?.slice(0, 1).toUpperCase() || "S"}</span>
             <span className="mobile-drawer-user">{user?.full_name || user?.username}</span>
             <button className="mobile-menu-logout" onClick={logout}>Log out</button>
           </div>
@@ -1395,7 +1420,7 @@ export default function WorkspaceApp() {
           {route === "/account" && <>
             <PageHeading kicker="YOUR PROFILE" title="Account & verification" detail="Keep your contact details trusted and up to date." action={<button className="button button-outline" onClick={logout}>Sign out</button>} />
             <div className="account-grid">
-              <section className="account-summary"><div className="profile-mark">{user?.full_name?.slice(0, 1).toUpperCase() || "S"}</div><p className="eyebrow">CAMPUS MEMBER</p><h2>{user?.full_name || user?.username}</h2><p>{user?.email}</p><span className="member-since">Username <strong>@{user?.username}</strong></span></section>
+              <section className="account-summary"><div className="profile-picture-wrap"><div className="profile-mark">{user?.profile_image_url ? <img src={user.profile_image_url} alt={`${user?.full_name || user?.username}'s profile`} /> : user?.full_name?.slice(0, 1).toUpperCase() || "S"}</div><label className="button button-outline profile-picture-button">{profileImageBusy ? "Uploading…" : user?.profile_image_url ? "Change photo" : "Add profile photo"}<input className="profile-picture-input" type="file" accept="image/jpeg,image/png,image/webp" disabled={profileImageBusy} onChange={uploadProfileImage} /></label></div><p className="eyebrow">CAMPUS MEMBER</p><h2>{user?.full_name || user?.username}</h2><p>{user?.email}</p><span className="member-since">Username <strong>@{user?.username}</strong></span></section>
               <section className="verification-panel"><div className="verification-heading"><div><p className="eyebrow">ACCOUNT TRUST</p><h2>Verify a contact method</h2></div><span className={`verification-state${verified ? " verified" : ""}`}>{verified ? "Verified" : "Action needed"}</span></div><p className="verification-copy">Verify your email or phone number to build trust with other students.</p>
                 <div className="verification-methods"><div className="method-row"><span className="method-number">01</span><div><strong>Email address</strong><span>{user?.email}</span></div><span className={`method-status${user?.email_verified ? " method-done" : ""}`}>{user?.email_verified ? "Verified" : "Not verified"}</span></div><div className="method-row"><span className="method-number">02</span><div><strong>Phone number</strong><span>{user?.phone || "No phone number added"}</span></div><span className={`method-status${user?.phone_verified ? " method-done" : ""}`}>{user?.phone_verified ? "Verified" : "Not verified"}</span></div></div>
                 {!verified && <div className="verify-actions"><label className="field" htmlFor="verify-channel"><span>Send code to</span><select id="verify-channel" value={channel} onChange={(event) => { setChannel(event.target.value); setCode(""); }}><option value="EMAIL">Email</option><option value="PHONE" disabled={!user?.phone}>Phone</option></select></label><button className="button button-outline" onClick={sendCode} disabled={resendIn > 0}>{resendIn ? `Resend in ${resendIn}s` : "Send verification code"}</button></div>}

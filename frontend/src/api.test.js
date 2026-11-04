@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { api } from "./api.js";
+import { API, api } from "./api.js";
+
+test("API requests target the local backend", () => {
+  assert.equal(API, "http://localhost:8000");
+});
 
 test("API requests use cookie credentials, attach CSRF tokens, and never send bearer tokens", async (t) => {
   const originalFetch = globalThis.fetch;

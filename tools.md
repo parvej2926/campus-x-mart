@@ -9,12 +9,11 @@ Real-time Communication: WebSocket
 Styling: Tailwind CSS
 Animation: Framer Motion
 Maps: Google Maps API
-Cloud Storage: Cloudinary
+Uploads: Local filesystem
 ML: TensorFlow Lite
-AI: LLM API
+AI: Local Ollama
 Version Control: Git + GitHub
 Build Tool: Vite
 Containerization: Docker
-Deployment: GitHub Actions + Cloud Hosting
+Checks: GitHub Actions
 Reporting: Crystal Reports
-

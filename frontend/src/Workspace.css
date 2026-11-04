@@ -120,8 +120,9 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .side-link-active .side-index { color: var(--forest); }
 .side-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--coral); }
 .sidebar-bottom { display: grid; grid-template-columns: 34px 1fr 26px; align-items: center; gap: 9px; margin-top: auto; padding: 14px 2px 0; border-top: 1px solid var(--line); }
-.sidebar-user-mark, .profile-mark { display: grid; place-items: center; border-radius: 50%; background: var(--gold); color: #493916; font-family: 'DM Serif Display', Georgia, serif; }
+.sidebar-user-mark, .profile-mark { display: grid; place-items: center; overflow: hidden; border-radius: 50%; background: var(--gold); color: #493916; font-family: 'DM Serif Display', Georgia, serif; }
 .sidebar-user-mark { width: 34px; height: 34px; font-size: 15px; }
+.sidebar-user-mark img, .profile-mark img { width: 100%; height: 100%; object-fit: cover; }
 .sidebar-user-copy { display: grid; min-width: 0; gap: 3px; }
 .sidebar-user-copy strong { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .sidebar-user-copy span { overflow: hidden; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
@@ -200,6 +201,11 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .account-grid { display: grid; grid-template-columns: minmax(210px, .7fr) minmax(0, 1.5fr); gap: 42px; align-items: start; }
 .account-summary { padding: 8px 0 24px; border-bottom: 1px solid var(--line); }
 .profile-mark { width: 62px; height: 62px; margin: 0 0 27px; font-size: 25px; }
+.profile-picture-wrap { display: flex; align-items: center; gap: 12px; margin-bottom: 27px; }
+.profile-picture-wrap .profile-mark { flex: 0 0 62px; margin: 0; }
+.profile-picture-button { position: relative; min-height: 36px; overflow: hidden; font-size: 10px; }
+.profile-picture-input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.profile-picture-input:disabled { cursor: wait; }
 .account-summary h2 { margin: 0 0 5px; font-family: 'DM Serif Display', Georgia, serif; font-size: 24px; font-weight: 400; }
 .account-summary > p:not(.eyebrow) { margin: 0 0 21px; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
 .member-since { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 10px; }

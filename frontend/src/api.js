@@ -1,4 +1,4 @@
-export const API = import.meta.env?.VITE_API_BASE_URL || "http://localhost:8000";
+export const API = "http://localhost:8000";
 
 const unsafeMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const authEndpoints = new Set([

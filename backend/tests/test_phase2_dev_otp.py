@@ -98,6 +98,23 @@ def test_send_verification_does_not_expose_code_by_default(monkeypatch):
     assert "code" not in response
 
 
+def test_send_verification_does_not_expose_code_after_sms_delivery(monkeypatch):
+    monkeypatch.setattr(settings, "APP_ENV", "dev")
+    monkeypatch.setattr(settings, "EXPOSE_DEV_OTP", True)
+    monkeypatch.setattr("main.get_connection", lambda: FakeConnection(("demo@example.com", "+8801712345678")))
+    monkeypatch.setattr("main.create_verification_code_for_user", lambda *args, **kwargs: "123456")
+    monkeypatch.setattr("main.send_verification_code", lambda *args: True)
+
+    response = send_verification(
+        request=fake_request(),
+        payload=VerificationSendRequest(channel="PHONE"),
+        current_user={"user_id": 99},
+    )
+
+    assert response["message"] == "A verification code was sent to your phone."
+    assert "dev_code" not in response
+
+
 def test_email_sender_uses_starttls_without_logging_code(monkeypatch):
     monkeypatch.setattr(settings, "APP_ENV", "prod")
     monkeypatch.setattr(settings, "EMAIL_PROVIDER", "smtp")
@@ -146,6 +163,20 @@ def test_email_sender_uses_resend_https_api(monkeypatch):
     post.return_value.raise_for_status.assert_called_once_with()
 
 
+def test_email_sender_uses_resend_in_development(monkeypatch):
+    monkeypatch.setattr(settings, "APP_ENV", "dev")
+    monkeypatch.setattr(settings, "EMAIL_PROVIDER", "resend")
+    monkeypatch.setattr(settings, "RESEND_API_KEY", "test-api-key")
+    monkeypatch.setattr(settings, "RESEND_FROM_EMAIL", "Campus X Mart <verify@example.com>")
+    post = MagicMock()
+    monkeypatch.setattr("verification_delivery.requests.post", post)
+
+    delivered = send_verification_code("EMAIL", "student@example.com", "482731")
+
+    assert delivered is True
+    post.assert_called_once()
+
+
 def test_resend_http_failure_is_reported_without_exposing_provider_response(monkeypatch):
     import requests
 
@@ -179,6 +210,34 @@ def test_sms_sender_is_pluggable(monkeypatch):
     sender = FakeSmsSender()
     monkeypatch.setattr("verification_delivery._sms_sender", sender)
 
-    send_verification_code("PHONE", "+8801712345678", "482731")
+    assert send_verification_code("PHONE", "+8801712345678", "482731") is True
 
     assert sender.sent == [("+8801712345678", "482731")]
+
+
+def test_sms_sender_uses_twilio_in_development_when_configured(monkeypatch):
+    monkeypatch.setattr(settings, "APP_ENV", "dev")
+    monkeypatch.setattr(settings, "TWILIO_ACCOUNT_SID", "test-account")
+    monkeypatch.setattr(settings, "TWILIO_AUTH_TOKEN", "test-token")
+    monkeypatch.setattr(settings, "TWILIO_FROM_PHONE", "+15555550100")
+    send_sms = MagicMock()
+    monkeypatch.setattr("verification_delivery._send_twilio_sms", send_sms)
+
+    delivered = send_verification_code("PHONE", "+8801712345678", "482731")
+
+    assert delivered is True
+    send_sms.assert_called_once_with("+8801712345678", "482731")
+
+
+def test_sms_sender_uses_demo_fallback_in_development_without_twilio(monkeypatch):
+    monkeypatch.setattr(settings, "APP_ENV", "dev")
+    monkeypatch.setattr(settings, "TWILIO_ACCOUNT_SID", None)
+    monkeypatch.setattr(settings, "TWILIO_AUTH_TOKEN", None)
+    monkeypatch.setattr(settings, "TWILIO_FROM_PHONE", None)
+    send_sms = MagicMock()
+    monkeypatch.setattr("verification_delivery._send_twilio_sms", send_sms)
+
+    delivered = send_verification_code("PHONE", "+8801712345678", "482731")
+
+    assert delivered is False
+    send_sms.assert_not_called()
